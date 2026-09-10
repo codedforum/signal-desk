@@ -132,10 +132,36 @@ tokens and $36.0B, plus `Tokenized ETFs`, `Robinhood Stock`, `bStocks`,
 Treasury Bonds` and `Real Estate`. The RWA view is built on those, through the other
 door. Worth either shipping the documented endpoints or pointing people at categories.
 
-**5. The 3D view has to survive a missing WebGL context.** Not a CMC issue, but worth
+**5. A cache key that ignores its own parameter truncates data silently.** Ours did:
+`categories(200)` and `categories(5000)` shared one entry, so whichever ran first won
+and the RWA view lost three of its nine sectors with no error anywhere. Found only by
+noticing the count changed between two runs. The limit is part of the key now.
+
+**6. The 3D view has to survive a missing WebGL context.** Not a CMC issue, but worth
 recording: `THREE.WebGLRenderer` throws rather than returning null, so an old device or a
 blocked context takes the whole script down unless it is wrapped. It degrades to the
-table now.
+table now. A canvas that has been `display:none` can also come back blank, and a
+software context can be lost without throwing, so re-entering the view resizes and
+redraws rather than trusting what is on the canvas. That one only showed up when a test
+navigated away and back: a direct visit always looked fine.
+
+## Mobile first
+
+The base stylesheet is the phone. Wider screens are the enhancement, added with
+`min-width` queries, not the other way round.
+
+- **App style bottom navigation** below 900px, with four primary tabs and a native
+  feeling overflow sheet for the rest. The top menu is hidden there.
+- **Installable.** A web manifest, theme colour, maskable icon and iOS standalone
+  meta, so it adds to a home screen and opens without browser chrome.
+- **Safe areas respected.** The tab bar and sheet pad by `env(safe-area-inset-bottom)`
+  so nothing sits under the home indicator.
+- **44px touch targets** everywhere, shrinking only above 900px where a pointer exists.
+- **16px form inputs on phones**, because anything smaller makes iOS Safari zoom the
+  viewport on focus and the layout never recovers.
+- **One finger orbits the 3D view, two fingers pinch to zoom**, since a phone has no
+  scroll wheel and page zoom would fight the layout.
+- Tapping a tab returns to the top of the section, the way a native app does.
 
 ## Design notes
 

@@ -20,9 +20,17 @@ html,body{margin:0}
 body{
   background:var(--bg); color:var(--ink); font-family:var(--display);
   font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased;
-  padding-bottom:64px; overflow-x:hidden;
+  /* room for the bottom navigation plus the home indicator on notched phones */
+  padding-bottom:calc(84px + env(safe-area-inset-bottom));
+  overflow-x:hidden;
+  -webkit-text-size-adjust:100%;
 }
-.wrap{max-width:1240px;margin:0 auto;padding-inline:22px}
+@media (min-width:900px){body{padding-bottom:64px}}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:16px}
+@media (min-width:700px){.wrap{padding-inline:22px}}
+/* 16px on inputs stops iOS Safari zooming the viewport on focus. Only shrink
+   once there is a pointer, where that behaviour does not apply. */
+@media (min-width:820px){input,select{font-size:13px;min-height:0}}
 a{color:inherit;text-decoration:none}
 
 /* ---------- ambient hero video ---------- */
@@ -51,7 +59,8 @@ h1{font-size:19px;font-weight:800;letter-spacing:-.015em;margin:0}
 .sub{margin:1px 0 0;color:var(--ink-3);font-size:12px;max-width:46ch}
 
 /* menu with a sliding ink bar */
-.menu{position:relative;display:flex;gap:2px;margin-left:auto;overflow-x:auto;scrollbar-width:none;max-width:100%}
+.menu{display:none}
+@media (min-width:900px){.menu{position:relative;display:flex;gap:2px;margin-left:auto;overflow-x:auto;scrollbar-width:none;max-width:100%}}
 .menu::-webkit-scrollbar{display:none}
 .menu a{
   position:relative;z-index:1;font-size:13px;font-weight:600;color:var(--ink-3);
@@ -72,8 +81,10 @@ h1{font-size:19px;font-weight:800;letter-spacing:-.015em;margin:0}
 .pill.warn{border-color:rgba(249,115,22,.5);color:var(--orange)}
 
 /* ---------- views and reveal motion ---------- */
-main{padding-top:26px}
-.view{display:flex;flex-direction:column;gap:18px}
+main{padding-top:16px}
+@media (min-width:700px){main{padding-top:26px}}
+.view{display:flex;flex-direction:column;gap:14px}
+@media (min-width:700px){.view{gap:18px}}
 .view[hidden]{display:none}
 .view.entering>*{animation:rise .5s var(--ease) both}
 .view.entering>*:nth-child(2){animation-delay:.06s}
@@ -81,27 +92,31 @@ main{padding-top:26px}
 @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 
 .panel{border:1px solid var(--line);border-radius:var(--r);background:rgba(19,21,27,.86);
-  padding:20px 20px 22px;min-width:0;backdrop-filter:blur(6px)}
+  padding:16px 14px 18px;min-width:0;backdrop-filter:blur(6px)}
+@media (min-width:700px){.panel{padding:20px 20px 22px}}
 .phead{display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px}
 .phead h2{font-size:15px;font-weight:700;margin:0;letter-spacing:.005em}
 .subhead{font-size:14px;font-weight:700;margin:18px 0 8px}
 .src{font-family:var(--mono);font-size:10px;color:var(--ink-3);word-break:break-all}
 .lede{margin:0 0 16px;color:var(--ink-2);font-size:13.5px;max-width:80ch}
-.row2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.row2{display:grid;grid-template-columns:1fr;gap:14px}
+@media (min-width:1000px){.row2{grid-template-columns:1fr 1fr;gap:18px}}
 .row2>*{min-width:0}
 
 /* ---------- regime ---------- */
 .panel-regime{border-color:var(--line-2);background:
   linear-gradient(180deg,rgba(24,27,34,.90),rgba(19,21,27,.94))}
-.regime-body{display:grid;grid-template-columns:1fr auto;gap:26px;align-items:center;margin-top:6px}
-.stance-label{display:inline-block;font-size:clamp(26px,4.6vw,40px);font-weight:800;letter-spacing:-.025em;
+.regime-body{display:grid;grid-template-columns:1fr;gap:18px;align-items:center;margin-top:6px;justify-items:center}
+@media (min-width:820px){.regime-body{grid-template-columns:1fr auto;gap:26px;justify-items:stretch}}
+.stance-label{display:inline-block;font-size:clamp(28px,8vw,40px);font-weight:800;letter-spacing:-.025em;
   color:var(--orange);text-transform:lowercase;line-height:1.05}
 .stance-why{margin:10px 0 0;color:var(--ink-2);font-size:13.5px;max-width:46ch}
 .divergence{margin:14px 0 0;padding:11px 13px;border-radius:9px;font-size:13px;line-height:1.5;
   border:1px solid rgba(249,115,22,.45);background:rgba(249,115,22,.09);color:#ffd7b0;max-width:54ch}
 .divergence b{color:var(--orange)}
 
-.gaugewrap{position:relative;width:260px;height:260px;flex:0 0 auto}
+.gaugewrap{position:relative;width:200px;height:200px;flex:0 0 auto}
+@media (min-width:820px){.gaugewrap{width:260px;height:260px}}
 .gauge-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
 .gauge-center span{font-family:var(--mono);font-size:40px;font-weight:600;line-height:1}
 .gauge-center small{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-top:6px}
@@ -120,7 +135,7 @@ main{padding-top:26px}
 .bb-dn{background:linear-gradient(90deg,#b91c1c,var(--dn));width:50%;transition:width .9s var(--ease)}
 
 /* ---------- 3D ---------- */
-.three-wrap{position:relative;height:440px;border:1px solid var(--line-2);border-radius:10px;
+.three-wrap{position:relative;height:300px;border:1px solid var(--line-2);border-radius:10px;
   background:radial-gradient(700px 300px at 50% 120%,rgba(249,115,22,.09),transparent 70%),var(--bg-2);
   overflow:hidden;margin-bottom:18px;cursor:grab}
 .three-wrap:active{cursor:grabbing}
@@ -145,20 +160,22 @@ main{padding-top:26px}
 .tbl .nm{color:var(--ink-3);font-size:11.5px;margin-left:7px;font-weight:400}
 .up{color:var(--up)} .dn{color:var(--dn)}
 .rank{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);margin-right:8px}
-.mini{font-family:var(--mono);font-size:10.5px;border:1px solid var(--line-2);background:var(--bg-2);
+.mini{font-family:var(--mono);font-size:11px;min-height:44px;border:1px solid var(--line-2);background:var(--bg-2);
   color:var(--ink-3);border-radius:6px;padding:3px 8px;cursor:pointer;transition:all .18s var(--ease)}
 .mini:hover{color:var(--orange);border-color:rgba(249,115,22,.5)}
 
 /* ---------- forms ---------- */
 .lookup{display:flex;gap:9px;margin-bottom:14px;flex-wrap:wrap}
 .lookup.wide input{flex:1;min-width:200px}
-.lookup.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
-input,select{font-family:var(--mono);font-size:13px;color:var(--ink);background:var(--bg-2);
+.lookup.grid4{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.lookup.grid4 button{grid-column:1 / -1}
+@media (min-width:820px){.lookup.grid4{grid-template-columns:repeat(4,1fr)}.lookup.grid4 button{grid-column:auto}}
+input,select{font-family:var(--mono);font-size:16px;min-height:44px;color:var(--ink);background:var(--bg-2);
   border:1px solid var(--line-2);border-radius:8px;padding:9px 11px;min-width:0;outline:none;
   transition:border-color .18s var(--ease),box-shadow .18s var(--ease)}
 input:focus,select:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(249,115,22,.14)}
 input::placeholder{color:var(--ink-3)}
-button{font-family:var(--display);font-size:13px;font-weight:600;color:#1a0d02;
+button{font-family:var(--display);font-size:14px;font-weight:600;color:#1a0d02;min-height:44px;
   background:linear-gradient(180deg,var(--orange),var(--orange-dim));border:0;border-radius:8px;
   padding:9px 16px;cursor:pointer;transition:filter .18s var(--ease),transform .12s var(--ease)}
 button:hover{filter:brightness(1.09)} button:active{transform:translateY(1px)}
@@ -166,7 +183,9 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
 .filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
 .filters label{display:flex;flex-direction:column;gap:5px;font-family:var(--mono);font-size:9.5px;
   letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
-.filters input,.filters select{width:150px}
+.filters label{flex:1 1 46%}
+.filters input,.filters select{width:100%}
+@media (min-width:820px){.filters label{flex:0 0 auto}.filters input,.filters select{width:150px}}
 .fcount{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-left:auto;padding-bottom:10px}
 
 /* ---------- lookup result ---------- */
@@ -179,14 +198,16 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
 .lrow{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;padding:3px 0;color:var(--ink-3)}
 
 /* ---------- chains, rwa, alerts ---------- */
-.chainlist{list-style:none;margin:0 0 16px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:9px}
+.chainlist{list-style:none;margin:0 0 16px;padding:0;display:grid;grid-template-columns:1fr;gap:8px}
+@media (min-width:600px){.chainlist{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:9px}}
 .chainlist li{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);
   border-radius:9px;padding:10px 12px;background:var(--bg-2)}
 .chainlist .cname{font-weight:700;font-size:13.5px}
 .chainlist .cid{font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
 .foot{margin:12px 0 0;font-family:var(--mono);font-size:11px;color:var(--ink-3)}
 
-.rwagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px;margin-bottom:6px}
+.rwagrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:6px}
+@media (min-width:700px){.rwagrid{grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px}}
 .rwacard{border:1px solid var(--line-2);border-radius:10px;padding:13px;background:var(--bg-2);cursor:pointer;
   transition:border-color .2s var(--ease),transform .2s var(--ease),background .2s var(--ease);text-align:left;
   font-family:var(--display);color:var(--ink)}
@@ -204,7 +225,8 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
 
 /* ---------- capability ---------- */
 .panel-cap{border-color:var(--line-2)}
-.caplist{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:9px}
+.caplist{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr;gap:8px}
+@media (min-width:600px){.caplist{grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:9px}}
 .caplist li{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:9px;
   padding:9px 11px;background:var(--bg-2);font-family:var(--mono);font-size:11.5px}
 .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
@@ -219,22 +241,63 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
 .mono{font-family:var(--mono);font-size:11px}
 .skel{color:var(--ink-3);font-family:var(--mono);font-size:12px}
 
-@media (max-width:1000px){
-  .row2{grid-template-columns:1fr}
-  .regime-body{grid-template-columns:1fr;gap:18px;justify-items:start}
-  .lookup.grid4{grid-template-columns:1fr 1fr}
-  .masthead{gap:12px}
-  .menu{order:3;width:100%;margin-left:0}
+@media (max-width:899px){
   .sub{display:none}
-}
-@media (max-width:560px){
-  .lookup.grid4{grid-template-columns:1fr}
-  .filters input,.filters select{width:100%}
-  .filters label{width:100%}
-  .three-wrap{height:320px}
-  .gaugewrap{width:200px;height:200px}
+  .masthead{gap:10px}
 }
 @media (prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
   .herovid{display:none}
+}
+
+/* ==================== app style bottom navigation ====================
+   Phones get a native feeling tab bar. It is the primary navigation below
+   900px, where the top menu is hidden, and disappears entirely above it. */
+.botnav{
+  position:fixed; left:0; right:0; bottom:0; z-index:40;
+  display:grid; grid-template-columns:repeat(5,1fr);
+  background:rgba(10,11,14,.93); backdrop-filter:blur(16px);
+  border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.botnav a,.botnav button{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  padding:9px 2px 8px; min-height:56px; background:none; border:0; cursor:pointer;
+  font-family:var(--display); font-size:10px; font-weight:600; letter-spacing:.01em;
+  color:var(--ink-3); transition:color .2s var(--ease);
+}
+.botnav svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round}
+.botnav a.on{color:var(--orange)}
+.botnav a.on svg{filter:drop-shadow(0 0 7px rgba(249,115,22,.5))}
+.botnav a:active,.botnav button:active{color:var(--ink-2)}
+@media (min-width:900px){.botnav{display:none}}
+
+/* overflow sheet, the same shape as a native action sheet */
+.sheet-backdrop{position:fixed;inset:0;z-index:45;background:rgba(4,5,7,.62);
+  animation:fadein .22s var(--ease) both}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.more-sheet{
+  position:fixed; left:0; right:0; bottom:0; z-index:46;
+  background:var(--panel-2); border-top:1px solid var(--line-2);
+  border-radius:18px 18px 0 0; padding:10px 16px calc(18px + env(safe-area-inset-bottom));
+  animation:slideup .28s var(--ease) both;
+}
+@keyframes slideup{from{transform:translateY(100%)}to{transform:none}}
+.more-sheet .grab{display:block;width:38px;height:4px;border-radius:99px;background:var(--line-2);margin:0 auto 12px}
+.more-sheet h2{margin:0 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.more-sheet a{display:flex;flex-direction:column;gap:2px;padding:13px 12px;border-radius:11px;
+  border:1px solid var(--line);background:var(--bg-2);margin-bottom:8px;min-height:56px;justify-content:center}
+.more-sheet a:active{border-color:rgba(249,115,22,.5)}
+.more-sheet .ms-t{font-size:14px;font-weight:700}
+.more-sheet .ms-s{font-size:11.5px;color:var(--ink-3)}
+@media (min-width:900px){.more-sheet,.sheet-backdrop{display:none!important}}
+
+/* 44px is the comfortable tap target. Only shrink it where there is a pointer. */
+@media (min-width:900px){.mini{min-height:28px;padding:3px 8px}}
+
+/* a phone has no hover, so a permanent tap hint replaces the orbit affordance */
+@media (hover:none){
+  .three-hint::after{content:", pinch to zoom"}
+  .tbl tbody tr:hover{background:none}
 }

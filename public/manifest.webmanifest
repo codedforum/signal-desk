@@ -1,0 +1,16 @@
+{
+  "name": "Signal Desk",
+  "short_name": "Signal",
+  "description": "Market regime, breadth, rotation and real world assets, on live CoinMarketCap data.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#08090c",
+  "theme_color": "#08090c",
+  "icons": [
+    { "src": "img/mark-64.png",  "sizes": "64x64",   "type": "image/png" },
+    { "src": "img/mark.png",     "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "img/mark.png",     "sizes": "256x256", "type": "image/png", "purpose": "maskable" }
+  ]
+}

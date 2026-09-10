@@ -46,15 +46,39 @@ function moveInk(link) {
 function show(view) {
   if (!VIEWS.includes(view)) view = 'desk';
   VIEWS.forEach((v) => { const n = $('#view-' + v); if (n) n.hidden = v !== view; });
-  $$('#menu a').forEach((a) => a.classList.toggle('on', a.dataset.view === view));
+  $$('#menu a, .botnav a, .more-sheet a').forEach((a) => a.classList.toggle('on', a.dataset.view === view));
   moveInk($(`#menu a[data-view="${view}"]`));
+  closeSheet();
+  // A tab bar is expected to return you to the top of the section, the way a
+  // native app does, rather than leaving you mid scroll from the last view.
+  if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: REDUCED ? 'auto' : 'smooth' });
   const node = $('#view-' + view);
   if (node && !REDUCED) { node.classList.remove('entering'); void node.offsetWidth; node.classList.add('entering'); }
-  if (view === 'rotation') initThree();
+  // A canvas that has been display:none can come back blank: the drawing buffer
+  // is not guaranteed to survive, and a software WebGL context can be lost under
+  // memory pressure without throwing. Re-entering the view therefore resizes and
+  // redraws rather than trusting whatever is still on the canvas.
+  if (view === 'rotation') { initThree(); if (threeRefresh) requestAnimationFrame(threeRefresh); }
   if (view === 'chains') loadChains();
   if (view === 'rwa') loadRwa();
   if (view === 'screener') renderScreen();
   if (view === 'portfolio') { renderPortfolio(); renderAlerts(); }
+}
+
+/* ---- overflow sheet, the mobile home for views the tab bar cannot hold ---- */
+function openSheet() {
+  const sh = $('#more-sheet'), bd = $('#sheet-backdrop'), btn = $('#more-btn');
+  if (!sh) return;
+  sh.hidden = false; bd.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  document.body.style.overflow = 'hidden';
+}
+function closeSheet() {
+  const sh = $('#more-sheet'), bd = $('#sheet-backdrop'), btn = $('#more-btn');
+  if (!sh || sh.hidden) return;
+  sh.hidden = true; bd.hidden = true;
+  btn.setAttribute('aria-expanded', 'false');
+  document.body.style.overflow = '';
 }
 
 addEventListener('hashchange', () => show(location.hash.slice(1)));
@@ -428,6 +452,8 @@ function renderHighlightChains(c) {
 /* ================================ 3D ================================ */
 
 let threeReady = false;
+let threeRefresh = null;   // set once the scene exists, re-renders on re-entry
+
 function initThree() {
   try { buildThree(); }
   catch (e) {
@@ -534,6 +560,23 @@ function buildThree() {
     place();
   }, { passive: false });
 
+  // Touch: one finger orbits, two fingers pinch to zoom. Without this the only
+  // way to zoom on a phone would be the page zoom, which fights the layout.
+  let pinch = 0;
+  const span = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  dom.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) { pinch = span(e.touches); }
+  }, { passive: true });
+  dom.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2 && pinch) {
+      e.preventDefault();
+      const d = span(e.touches);
+      dist = Math.max(12, Math.min(44, dist * (pinch / d)));
+      pinch = d; place();
+    }
+  }, { passive: false });
+  dom.addEventListener('touchend', () => { pinch = 0; });
+
   const t0 = performance.now();
   (function loop(t) {
     requestAnimationFrame(loop);
@@ -549,9 +592,20 @@ function buildThree() {
     renderer.render(scene, cam);
   })(performance.now());
 
-  addEventListener('resize', () => {
+  const resize = () => {
     const w = wrap.clientWidth, h = wrap.clientHeight;
+    if (!w || !h) return;
     cam.aspect = w / h; cam.updateProjectionMatrix(); renderer.setSize(w, h);
+    renderer.render(scene, cam);
+  };
+  addEventListener('resize', resize);
+  threeRefresh = resize;
+
+  // A lost context stops rendering silently. Say so instead of showing a blank box.
+  dom.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    wrap.dataset.failed = '1';
+    wrap.innerHTML = '<p class="skel" style="padding:22px;max-width:52ch">The graphics context was lost, so the 3D view stopped. The table below carries the same figures.</p>';
   });
 }
 
@@ -653,6 +707,13 @@ $('#alert-form').addEventListener('submit', (e) => {
   addAlert(s, d, p);
   $('#al-sym').value = ''; $('#al-px').value = '';
 });
+
+$('#more-btn').addEventListener('click', () => {
+  const sh = $('#more-sheet');
+  if (sh.hidden) openSheet(); else closeSheet();
+});
+$('#sheet-backdrop').addEventListener('click', closeSheet);
+addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
 
 // The ambient video is decorative, so it is only fetched when motion is welcome.
 if (!REDUCED) {
