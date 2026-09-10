@@ -76,6 +76,45 @@ const TOOLS = [
     },
   },
   {
+    name: 'rwa_assets',
+    description:
+      'Tokenised real world assets indexed by CoinMarketCap: equities, commodities and funds that exist on chain. ' +
+      'Returns symbol, name, asset type, tokenised price, tokenised market cap and 24h tokenised volume, ranked by ' +
+      'tokenised market cap. Use for "what stocks are tokenised", "tokenised gold", "RWA market".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        asset_type: { type: 'string', description: 'Optional filter. Populated today: stock, commodity, etf.' },
+        limit: { type: 'number', description: 'How many assets, 1 to 250. Default 25.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'rwa_asset',
+    description:
+      'One tokenised real world asset in full: the registrant behind it (industry, founded, employees, SEC CIK, website) ' +
+      'and every on-chain token representing it with the issuer that minted each one. Use this to answer "who issues ' +
+      'tokenised NVDA", "what company is behind this token", "which version of tokenised gold is largest".',
+    inputSchema: {
+      type: 'object',
+      properties: { rwa_id: { type: 'number', description: 'The rwa_id from rwa_assets.' } },
+      required: ['rwa_id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'rwa_issuers',
+    description:
+      'Who mints tokenised real world assets, and how many each has issued. Optionally drills into one issuer to list ' +
+      'everything it has tokenised. Use for "who issues tokenised stocks", "what else has Backed Assets minted".',
+    inputSchema: {
+      type: 'object',
+      properties: { issuer_id: { type: 'string', description: 'Optional. Omit for the ranked issuer list.' } },
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'api_capability',
     description:
       'What the configured CoinMarketCap key can actually reach, probed live against the API. Returns which endpoints are ' +
@@ -138,6 +177,71 @@ async function runTool(name, args = {}) {
       const q = String(args.search || '').toLowerCase();
       const out = q ? rows.filter((x) => x.name.toLowerCase().includes(q)) : rows;
       return { total: rows.length, matched: out.length, networks: out.slice(0, 60) };
+    }
+    case 'rwa_assets': {
+      const r = await cmc.rwaAssets({
+        type: String(args.asset_type || ''),
+        limit: Math.min(Math.max(Number(args.limit) || 25, 1), 250),
+      });
+      if (!r.ok) return { error: `rwa assets unavailable (${r.verdict})`, detail: r.msg };
+      const rows = cmc.rwaRows(r.data, 'rwa_assets');
+      return {
+        total: r.data?.total_size ?? rows.length,
+        assets: rows.map((a) => {
+          const q = Array.isArray(a.quotes) ? (a.quotes.find((x) => (x.symbol || '').toUpperCase() === 'USD') || a.quotes[0] || {}) : {};
+          return {
+            rwa_id: a.rwa_id, symbol: a.symbol, name: a.name, assetType: a.asset_type, rank: a.rwa_rank,
+            tokenizedPrice: q.average_tokenized_price ?? a.average_tokenized_price,
+            tokenizedMarketCap: q.tokenized_market_cap ?? a.tokenized_market_cap,
+            tokenizedVolume24h: q.tokenized_volume_24h ?? a.tokenized_volume_24h,
+          };
+        }),
+      };
+    }
+    case 'rwa_asset': {
+      const id = Number(args.rwa_id);
+      if (!id) return { error: 'rwa_id is required' };
+      const [info, quote] = await Promise.all([cmc.rwaInfo([id]), cmc.rwaQuotes([id])]);
+      const meta = cmc.rwaRows(info.data, 'rwa_assets')[0];
+      const q = cmc.rwaRows(quote.data, 'rwa_assets')[0];
+      if (!meta && !q) return { error: `rwa asset ${id} unavailable (${info.verdict})`, detail: info.msg };
+      const usd = Array.isArray(q?.quotes) ? (q.quotes.find((x) => (x.symbol || '').toUpperCase() === 'USD') || q.quotes[0] || {}) : {};
+      const about = meta?.about;
+      return {
+        rwa_id: id,
+        symbol: meta?.symbol || q?.symbol, name: meta?.name || q?.name,
+        assetType: q?.asset_type, industry: meta?.industry || null,
+        founded: meta?.founded || null, employees: meta?.employees || null,
+        secCik: meta?.cik || null,
+        website: Array.isArray(meta?.website) ? meta.website[0] : meta?.website || null,
+        about: (typeof about === 'string' ? about : about?.description || '').replace(/#+\s*/g, '').slice(0, 500) || null,
+        tokenizedPrice: usd.average_tokenized_price ?? q?.average_tokenized_price,
+        tokenizedMarketCap: usd.tokenized_market_cap ?? q?.tokenized_market_cap,
+        // The join a model cannot make on its own: one asset, many issuers.
+        tokens: (q?.tokens || []).map((t) => ({
+          symbol: t.symbol, name: t.name, issuer: t.issuer_name,
+          price: t.price, marketCap: t.market_cap,
+        })).sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0)),
+      };
+    }
+    case 'rwa_issuers': {
+      if (args.issuer_id) {
+        const r = await cmc.rwaIssuer(String(args.issuer_id), 100);
+        if (!r.ok) return { error: `issuer unavailable (${r.verdict})`, detail: r.msg };
+        const d = r.data || {};
+        return {
+          issuer: d.name, issuer_id: d.issuer_id, total: d.num_tokens,
+          website: Array.isArray(d.website) ? d.website[0] : d.website || null,
+          tokens: (d.tokens || []).map((t) => ({ symbol: t.symbol, name: t.name, rwa_id: t.rwa_id })),
+        };
+      }
+      const r = await cmc.rwaIssuers(100);
+      if (!r.ok) return { error: `issuers unavailable (${r.verdict})`, detail: r.msg };
+      return {
+        issuers: cmc.rwaRows(r.data, 'issuers')
+          .map((i) => ({ issuer_id: i.issuer_id, name: i.name, tokens: i.num_tokens }))
+          .sort((a, b) => (b.tokens || 0) - (a.tokens || 0)),
+      };
     }
     case 'api_capability': {
       const checks = await Promise.all(Object.entries(cmc.ENDPOINTS).map(async ([n, e]) => {

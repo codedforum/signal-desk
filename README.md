@@ -32,13 +32,13 @@ npm run capability        # what your key can actually reach
 | **Markets and Trading Tools** | Screener with local filtering, watchlist, portfolio with live PnL, price alerts evaluated client side |
 | **AI Agents and Automation** | `mcp/server.js`, an MCP server exposing six tools over stdio to any LLM client |
 | **Data and Visualisation** | Regime read, sentiment gauge, breadth bar, interactive 3D sector rotation, chain explorer |
-| **Real World Assets** | Tokenised equities, ETFs, commodities, gold, treasuries and real estate, with constituents |
+| **Real World Assets** | The v5 RWA family: tokenised asset universe, per-asset registrant metadata including SEC CIK, the tokens representing each asset with their issuers, and an issuer explorer |
 
 Submitted under one track, but the product covers all four.
 
 ### The MCP server
 
-Six tools, and they expose the ANALYSIS rather than thin endpoint wrappers. A model
+Nine tools, and they expose the ANALYSIS rather than thin endpoint wrappers. A model
 asking "what is the market doing" wants a regime read and a breadth number, not 200
 rows of JSON it has to reduce itself, badly.
 
@@ -49,7 +49,15 @@ sector_rotation   where money moved, by sector
 quote             live price for one or many symbols, batched into one credit
 chain_coverage    which networks CMC indexes, and their platform ids
 api_capability    what the key can actually reach, so a model never invents an answer
+rwa_assets        tokenised equities, commodities and funds, by tokenised market cap
+rwa_asset         one asset: its registrant, its SEC CIK, and every token representing it
+rwa_issuers       who mints tokenised assets, and everything one issuer has minted
 ```
+
+`rwa_asset` is the one worth calling out. Asked "who issues tokenised NVDA", a model
+with raw endpoint access would have to fetch, join and rank three payloads. Here it
+gets Nvidia Corp, CIK 0001045810, and eight tokens ranked by market cap with the
+issuer named on each.
 
 Install:
 
@@ -76,6 +84,13 @@ Every panel names its source in the UI as well as here.
 | `/v1/cryptocurrency/listings/new` | GET | new listings, when the plan allows | no |
 | `/v1/dex/gainer-loser/list` | **POST** | on-chain movers, when the plan allows | no |
 | `/v1/dex/new/list` | **POST** | new on-chain tokens, when the plan allows | no |
+| `/v5/real-world-assets/assets/list` | GET | the tokenised asset universe, by tokenised market cap | yes |
+| `/v5/real-world-assets/map` | GET | asset id and type taxonomy | yes |
+| `/v5/real-world-assets/info` | GET | the registrant behind a token: industry, founded, employees, SEC CIK | yes |
+| `/v5/real-world-assets/quotes/latest` | GET | tokenised price and cap, plus the tokens representing the asset | yes |
+| `/v5/real-world-assets/issuers/list` | GET | the issuer explorer | yes |
+| `/v5/real-world-assets/issuers` | GET | one issuer and everything it has tokenised | yes |
+| `/v5/real-world-assets/market-pairs/list` | GET | per-asset market pairs, refused on free | no |
 
 **Everything the product needs to be useful runs on the free tier.** The paid endpoints
 add breadth, not substance, which was deliberate: a dashboard that only works after
@@ -97,6 +112,15 @@ and it is free. Checking the five chains this project cares about:
 Fogo and Robinhood Chain are genuinely hard to get data for. Two other vendors evaluated
 for the same job could not confirm either. CMC indexes both, which is the strongest
 reason in this repo to build on it.
+
+**One real world asset maps to many issuers, and the API makes that join for you.**
+`quotes/latest` returns not just a tokenised price but the list of tokens that
+represent the asset, each with its issuer name and its own market cap. Nvidia
+resolves to eight tokenised versions across Backed Assets, Ondo, Robinhood and
+bStocks. Gold resolves to seven led by Tether Holdings and Paxos. Pair that with
+`info`, which carries the registrant including the SEC CIK, and a tokenised equity
+traces from an on chain ticker to a filing identifier in two calls. No category
+taxonomy reaches that, because a category has no concept of an issuer.
 
 **Categories are underrated.** `/v1/cryptocurrency/categories` gives a sector taxonomy
 with market cap and change already computed, so rotation needs one call rather than a
@@ -123,14 +147,45 @@ have removed a whole afternoon.
 while most of the API returns readable ones. Matching on `name` returned zero results
 for chains that were all present. Nearly reported that CMC does not cover Base.
 
-**4. The RWA endpoints are documented but not reachable, and the data is there anyway.**
-The endpoint overview lists a Real World Assets category. Every path tried returned 404,
-and CMC's own published agent skills contain no RWA references at all. But the tokenised
-asset taxonomy does exist, inside categories: `Real World Assets Protocols` with 217
-tokens and $36.0B, plus `Tokenized ETFs`, `Robinhood Stock`, `bStocks`,
-`Tokenized commodities`, `Tokenized Gold`, `Tokenized Treasury Bills`, `Tokenized
-Treasury Bonds` and `Real Estate`. The RWA view is built on those, through the other
-door. Worth either shipping the documented endpoints or pointing people at categories.
+**4. The RWA endpoints live under /v5, and guessing the version cost the most time
+in this build.** Every other family this project touches is v1, v2 or v3, so
+`/v1/rwa/*` and `/v1/real-world-assets/*` were the natural first guesses. Both 404,
+as does everything else under v1. The real prefix is `/v5/real-world-assets/`. A 404
+on a guessed path is evidence about the guess and nothing else, and for a while this
+README said the endpoints were unreachable, which was simply wrong. Six of the seven
+are on the free Basic tier:
+
+| Endpoint | Free tier |
+|---|---|
+| `/v5/real-world-assets/map` | yes, 0 credits |
+| `/v5/real-world-assets/assets/list` | yes |
+| `/v5/real-world-assets/info` | yes |
+| `/v5/real-world-assets/quotes/latest` | yes |
+| `/v5/real-world-assets/issuers/list` | yes |
+| `/v5/real-world-assets/issuers` | yes |
+| `/v5/real-world-assets/market-pairs/list` | no, 403 |
+
+The lesson generalises past this API: a version prefix is not guessable from a
+sibling family, and the endpoint reference is the only source for it.
+
+**4b. The v5 family does not shape its responses like the rest of the API.** Three
+differences, each of which failed silently rather than loudly:
+
+- `quotes` is an **array** of per-currency objects carrying a `symbol` field, where
+  v1 and v2 return an object keyed by currency. Reading it as `quote.USD` yields
+  undefined for every number with no error anywhere.
+- `about` is an **object** holding a markdown description, not a string. Calling
+  `.slice` on it threw inside an async route handler, and because nothing caught it
+  the response was never sent: the request hung for fifty seconds rather than
+  failing. Every async handler is wrapped now, so a bad upstream shape becomes a
+  logged 500 instead of silence.
+- the issuer token list carries identity only, `name`, `symbol`, `crypto_id` and
+  `rwa_id`. No price and no network. Columns were built for data that was never
+  there, and the fix was to show what exists and use `rwa_id` to link each row back
+  to its asset.
+
+All three were found by dumping the raw payload. None would have been caught by
+reading the documented field list.
 
 **5. A cache key that ignores its own parameter truncates data silently.** Ours did:
 `categories(200)` and `categories(5000)` shared one entry, so whichever ran first won

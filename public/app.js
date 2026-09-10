@@ -502,13 +502,243 @@ function checkAlerts(quotes) {
 }
 
 /* ================================ rwa =============================== */
+//
+// Three tabs over two endpoint families. Assets and issuers come from the v5
+// real world assets endpoints; sectors comes from categories, which aggregates
+// in a way v5 does not.
 
 let rwaLoaded = false;
+let rwaTypeSel = '';
+
+function rwaTab(name) {
+  for (const t of ['assets', 'issuers', 'sectors']) {
+    $('#rwatab-' + t).hidden = t !== name;
+  }
+  $$('[data-rwatab]').forEach((b) => {
+    const on = b.dataset.rwatab === name;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  if (name === 'issuers') loadIssuers();
+  if (name === 'sectors') loadRwaSectors();
+}
+
 async function loadRwa() {
   if (rwaLoaded) return; rwaLoaded = true;
-  const grid = $('#rwa-grid'); grid.textContent = 'loading';
+  $$('[data-rwatab]').forEach((b) => { b.onclick = () => rwaTab(b.dataset.rwatab); });
+  await loadRwaTypes();
+  await loadRwaAssets('');
+}
+
+async function loadRwaTypes() {
+  const row = $('#rwa-types');
+  row.textContent = '';
+  let types = [];
+  // Which types carry rows is asked of the API, never pinned here. Three are
+  // populated today and the rest answer 200 with an empty list; a chip that
+  // always opens an empty table is worse than no chip.
   try {
-    const r = await fetch('api/rwa').then((x) => x.json());
+    const r = await fetch('api/rwa/types').then((x) => x.json());
+    types = r.populated || [];
+  } catch { /* fall through to the all chip alone */ }
+  const mk = (val, label) => {
+    const b = el('button', 'chip' + (val === rwaTypeSel ? ' on' : ''), label);
+    b.onclick = () => {
+      rwaTypeSel = val;
+      $$('#rwa-types .chip').forEach((c) => c.classList.remove('on'));
+      b.classList.add('on');
+      loadRwaAssets(val);
+    };
+    row.append(b);
+  };
+  mk('', 'All');
+  for (const t of types) mk(t, t.replace(/_/g, ' '));
+}
+
+async function loadRwaAssets(type) {
+  const tb = $('#rwa-assets-table tbody');
+  const note = $('#rwa-assets-note');
+  tb.innerHTML = '<tr><td colspan="5" class="skel">loading</td></tr>';
+  try {
+    const r = await fetch('api/rwa/assets?limit=60' + (type ? '&type=' + encodeURIComponent(type) : '')).then((x) => x.json());
+    tb.textContent = '';
+    if (!r.ok || !r.data?.length) {
+      tb.innerHTML = '<tr><td colspan="5" class="skel">' + (r.verdict === 'plan' ? 'this endpoint needs a paid plan' : 'no assets returned') + '</td></tr>';
+      note.textContent = '';
+      return;
+    }
+    for (const a of r.data) {
+      const tr = el('tr');
+      tr.tabIndex = 0;
+      tr.className = 'rowopen';
+      const open = () => openRwaAsset(a.id, a.symbol, a.name);
+      tr.onclick = open;
+      tr.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+      const c = el('td');
+      c.append(el('strong', null, a.symbol || '?'));
+      c.append(el('span', 'sub', a.name || ''));
+      tr.append(c);
+      tr.append(el('td', null, (a.type || '').replace(/_/g, ' ')));
+      tr.append(el('td', 'num', usd(a.price)));
+      tr.append(el('td', 'num', usd(a.tokenizedMarketCap)));
+      tr.append(el('td', 'num', usd(a.tokenizedVolume24h)));
+      tb.append(tr);
+    }
+    note.textContent = `${r.data.length} shown of ${r.total} tokenised assets indexed${type ? ' in ' + type.replace(/_/g, ' ') : ''}. Tap a row for the registrant behind the token.`;
+  } catch {
+    tb.innerHTML = '<tr><td colspan="5" class="skel">offline</td></tr>';
+  }
+}
+
+// The detail that justifies the whole track: a tokenised equity resolved back to
+// the company that issued the shares, including its SEC filing id.
+async function openRwaAsset(id, symbol, name) {
+  openModal(symbol || name || 'Asset', name || 'tokenised real world asset', (b) => {
+    b.append(el('p', 'skel', 'loading'));
+  });
+  const body = $('#modal-body');
+  try {
+    const r = await fetch('api/rwa/asset/' + encodeURIComponent(id)).then((x) => x.json());
+    if (!r.ok || !r.data) {
+      body.textContent = '';
+      body.append(el('p', 'skel', 'no metadata returned for this asset'));
+      return;
+    }
+    const a = r.data;
+    const cells = [
+      ['Tokenised price', usd(a.price)],
+      ['Tokenised cap', usd(a.tokenizedMarketCap)],
+      ['Tokenised volume', usd(a.tokenizedVolume24h)],
+      ['Type', (a.type || 'n/a').replace(/_/g, ' ')],
+      ['Rank', a.rank == null ? 'n/a' : '#' + a.rank],
+      ['Industry', a.industry || 'n/a'],
+      ['Founded', a.founded || 'n/a'],
+      ['Employees', a.employees ? Number(a.employees).toLocaleString() : 'n/a'],
+      ['SEC CIK', a.cik || 'n/a'],
+    ];
+    const wrap = el('div');
+    const grid = el('div', 'mgrid');
+    for (const [k, v] of cells) {
+      const cell = el('div', 'mcell');
+      cell.append(el('span', 'mk', k));
+      cell.append(el('span', 'mv', v));
+      grid.append(cell);
+    }
+    wrap.append(grid);
+
+    // One real world asset maps to many tokens, each minted by a named issuer.
+    if (r.tokens?.length) {
+      wrap.append(el('h4', 'msub', `Tokens representing this asset (${r.tokens.length})`));
+      const list = el('div', 'tokline');
+      for (const t of r.tokens.slice(0, 8)) {
+        const row = el('div', 'tokrow');
+        const left = el('div');
+        left.append(el('strong', null, t.symbol || '?'));
+        left.append(el('span', 'sub', t.issuer ? 'by ' + t.issuer : (t.name || '')));
+        row.append(left);
+        const right = el('div', 'tokright');
+        right.append(el('span', 'mv', usd(t.price)));
+        right.append(el('span', 'sub', usd(t.marketCap)));
+        row.append(right);
+        list.append(row);
+      }
+      wrap.append(list);
+    }
+
+    if (a.about) wrap.append(el('p', 'mabout', a.about));
+    if (a.website) {
+      const link = el('a', 'mlink', a.website.replace(/^https?:\/\//, ''));
+      link.href = a.website; link.target = '_blank'; link.rel = 'noopener noreferrer';
+      wrap.append(link);
+    }
+    if (r.marketPairsVerdict === 'plan') {
+      wrap.append(el('p', 'hint', 'Market pairs for this asset are the one v5 endpoint the free plan refuses. Everything above is on the free tier.'));
+    }
+    $('#modal-title').textContent = a.symbol || symbol || 'Asset';
+    $('#modal-sub').textContent = [a.name, a.type && a.type.replace(/_/g, ' ')].filter(Boolean).join(', ');
+    body.textContent = '';
+    body.append(wrap);
+  } catch {
+    body.textContent = '';
+    body.append(el('p', 'skel', 'offline'));
+  }
+}
+
+let issuersLoaded = false;
+async function loadIssuers() {
+  if (issuersLoaded) return; issuersLoaded = true;
+  const grid = $('#rwa-issuers');
+  grid.innerHTML = '<p class="skel">loading</p>';
+  try {
+    const r = await fetch('api/rwa/issuers').then((x) => x.json());
+    grid.textContent = '';
+    if (!r.ok || !r.data?.length) { grid.append(el('p', 'skel', 'no issuers returned')); return; }
+    for (const i of r.data) {
+      const b = el('button', 'isscard');
+      if (i.logo) {
+        const img = el('img', 'isslogo');
+        img.src = i.logo; img.alt = ''; img.loading = 'lazy';
+        img.onerror = () => img.remove();
+        b.append(img);
+      }
+      const t = el('div', 'isstext');
+      t.append(el('strong', null, i.name));
+      t.append(el('span', 'sub', i.tokens + ' tokenised'));
+      b.append(t);
+      b.onclick = () => {
+        $$('.isscard').forEach((x) => x.classList.remove('on'));
+        b.classList.add('on');
+        loadIssuer(i.id, i.name);
+      };
+      grid.append(b);
+    }
+  } catch { grid.textContent = ''; grid.append(el('p', 'skel', 'offline')); }
+}
+
+async function loadIssuer(id, name) {
+  const box = $('#rwa-issuer-detail'), t = $('#rwa-issuer-title'), tb = $('#rwa-issuer-table tbody');
+  box.hidden = false;
+  t.textContent = name + ', loading';
+  tb.innerHTML = '<tr><td colspan="4" class="skel">loading</td></tr>';
+  try {
+    const r = await fetch('api/rwa/issuer/' + encodeURIComponent(id)).then((x) => x.json());
+    tb.textContent = '';
+    if (!r.ok || !r.tokens?.length) {
+      t.textContent = name;
+      tb.innerHTML = '<tr><td colspan="3" class="skel">no tokens returned</td></tr>';
+      return;
+    }
+    const shown = r.tokens.slice(0, 60);
+    t.textContent = `${name}, ${shown.length} of ${r.data.tokens} tokens`;
+    for (const k of shown) {
+      const tr = el('tr');
+      tr.append(el('td', null, k.name || ''));
+      tr.append(el('td', null, k.symbol || ''));
+      tr.append(el('td', 'num', k.rwaId == null ? 'n/a' : String(k.rwaId)));
+      // The rwa_id is the join back to the asset, so an issuer row opens the
+      // asset it minted rather than being a dead end.
+      if (k.rwaId != null) {
+        tr.tabIndex = 0;
+        tr.className = 'rowopen';
+        const open = () => openRwaAsset(k.rwaId, k.symbol, k.name);
+        tr.onclick = open;
+        tr.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+      }
+      tb.append(tr);
+    }
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch {
+    t.textContent = name;
+    tb.innerHTML = '<tr><td colspan="3" class="skel">offline</td></tr>';
+  }
+}
+
+let rwaSectorsLoaded = false;
+async function loadRwaSectors() {
+  if (rwaSectorsLoaded) return; rwaSectorsLoaded = true;
+  const grid = $('#rwa-grid'); grid.innerHTML = '<p class="skel">loading</p>';
+  try {
+    const r = await fetch('api/rwa/sectors').then((x) => x.json());
     grid.textContent = '';
     if (!r.ok || !r.data.length) { grid.append(el('p', 'skel', 'categories unavailable')); return; }
     for (const c of r.data) {
@@ -531,7 +761,7 @@ async function loadRwaCat(id, label) {
   t.hidden = false; t.textContent = label + ', loading';
   tbl.hidden = false; tb.textContent = '';
   try {
-    const r = await fetch('api/rwa/' + encodeURIComponent(id)).then((x) => x.json());
+    const r = await fetch('api/rwa/sector/' + encodeURIComponent(id)).then((x) => x.json());
     if (!r.ok || !r.data?.length) { t.textContent = label; tb.innerHTML = '<tr><td colspan="5" class="skel">no constituents returned</td></tr>'; return; }
     t.textContent = `${label}, ${r.data.length} constituents by market cap`;
     for (const a of r.data) {

@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
 
 <!-- ambient hero video, decorative only, not loaded when motion is reduced -->
 <div class="herovid" aria-hidden="true">
@@ -185,13 +186,51 @@
 <!-- ============================ RWA ============================= -->
 <section class="view" id="view-rwa" hidden>
   <section class="panel reveal">
-    <div class="phead"><h2>Tokenised real world assets</h2><code class="src">/v1/cryptocurrency/categories &nbsp; /v1/cryptocurrency/category</code></div>
-    <p class="lede">The documented RWA endpoints answer 404 on every path, but the tokenised asset taxonomy lives inside categories. Equities, ETFs, commodities, treasuries and real estate, reached through the other door. Select a sector to load its constituents.</p>
-    <div class="rwagrid" id="rwa-grid"></div>
-    <h3 class="subhead" id="rwa-title" hidden></h3>
-    <div class="tablewrap"><table class="tbl" id="rwa-table" hidden>
-      <thead><tr><th>Asset</th><th class="num">Price</th><th class="num">24h</th><th class="num">7d</th><th class="num">Market cap</th></tr></thead><tbody></tbody>
-    </table></div>
+    <div class="phead">
+      <h2>Tokenised real world assets</h2>
+      <code class="src">/v5/real-world-assets/*</code>
+    </div>
+    <p class="lede">Equities, commodities and funds that exist on chain, read from the v5 real world assets family. An asset here carries the registrant behind it, and every token traces back to the issuer that minted it.</p>
+
+    <div class="segbar" role="tablist" aria-label="RWA sections">
+      <button class="seg on" role="tab" aria-selected="true"  data-rwatab="assets">Assets</button>
+      <button class="seg"    role="tab" aria-selected="false" data-rwatab="issuers">Issuers</button>
+      <button class="seg"    role="tab" aria-selected="false" data-rwatab="sectors">Sectors</button>
+      <span class="segglide" aria-hidden="true"></span>
+    </div>
+
+    <!-- ASSETS -->
+    <div class="rwatab" id="rwatab-assets">
+      <div class="chiprow" id="rwa-types"></div>
+      <div class="tablewrap"><table class="tbl" id="rwa-assets-table">
+        <thead><tr><th>Asset</th><th>Type</th><th class="num">Tokenised price</th><th class="num">Tokenised cap</th><th class="num">24h volume</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <p class="hint" id="rwa-assets-note"></p>
+    </div>
+
+    <!-- ISSUERS -->
+    <div class="rwatab" id="rwatab-issuers" hidden>
+      <p class="hint">Who minted it, and what else they have minted. The issuer is a first class object in v5 with no equivalent in the category taxonomy.</p>
+      <div class="issgrid" id="rwa-issuers"></div>
+      <div id="rwa-issuer-detail" hidden>
+        <h3 class="subhead" id="rwa-issuer-title"></h3>
+        <div class="tablewrap"><table class="tbl" id="rwa-issuer-table">
+          <thead><tr><th>Token</th><th>Symbol</th><th class="num">RWA id</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- SECTORS -->
+    <div class="rwatab" id="rwatab-sectors" hidden>
+      <p class="hint">How the tokenised sectors compare by market cap, from <code>/v1/cryptocurrency/categories</code>. The v5 family describes single assets, it does not aggregate them, so this answers the question the other endpoints cannot.</p>
+      <div class="rwagrid" id="rwa-grid"></div>
+      <h3 class="subhead" id="rwa-title" hidden></h3>
+      <div class="tablewrap"><table class="tbl" id="rwa-table" hidden>
+        <thead><tr><th>Asset</th><th class="num">Price</th><th class="num">24h</th><th class="num">7d</th><th class="num">Market cap</th></tr></thead><tbody></tbody>
+      </table></div>
+    </div>
   </section>
 </section>
 
