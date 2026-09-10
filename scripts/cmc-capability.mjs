@@ -1,10 +1,10 @@
 // What can this CMC key actually do?
 //
-// Written because the plan for both the Corvo fallback and the hackathon build
-// depends entirely on tier, and the tier is not visible from the dashboard in a
-// way that maps onto endpoints. Guessing produced three wrong answers in a row:
-// 405 was the wrong HTTP method, 400 was the wrong body, and 403 was the real
-// limit. This asks the live API instead of a document.
+// A subscription tier is not visible from the dashboard in a way that maps onto
+// endpoints, and there is no endpoint that reports what a key may reach. Guessing
+// produced three wrong answers in a row: 405 was the wrong HTTP method, 400 was
+// the wrong body, and only 403 was a real plan limit. This asks the live API
+// instead of a document.
 //
 // Run it again the moment the plan changes and diff the output. A capability
 // list written by hand rots; this one cannot.
@@ -44,8 +44,8 @@ const PROBES = [
   ['rwa',      'rwa listings',           'GET',  '/v1/rwa/listings/latest'],
 ];
 
-// The five chains Corvo routes on. Coverage here is what decides whether CMC can
-// stand in for GeckoTerminal, or only rescue the majors.
+// Long tail networks are the interesting test. Majors are indexed everywhere, so
+// coverage of these is what distinguishes one on-chain data source from another.
 const CHAINS = ['base', 'solana', 'fogo', 'robinhood', 'x layer'];
 
 const probe = async ([group, label, method, path, body]) => {
@@ -110,7 +110,7 @@ if (jsonOut) {
   const usable = results.filter(r => r.verdict === 'yes').length;
   console.log('\n' + '='.repeat(72));
   console.log(`usable now: ${usable} of ${results.length}   plan-gated: ${results.filter(r => r.verdict === 'plan').length}`);
-  console.log('\nchain coverage (decides if CMC can replace GeckoTerminal for Corvo):');
+  console.log('\nchain coverage:');
   if (!chains.available) console.log('  platform list unavailable:', chains.status || chains.error);
   else {
     console.log(`  ${chains.total} networks known to CMC`);
