@@ -406,8 +406,11 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
 @keyframes drift-a{to{transform:translate3d(14vw,8vh,0) scale(1.15)}}
 @keyframes drift-b{to{transform:translate3d(-12vw,-6vh,0) scale(.88)}}
 @keyframes drift-c{to{transform:translate3d(8vw,-10vh,0) scale(1.2)}}
-/* Everything real sits above the field. */
-.wrap,.topbar,.botnav,.modal,.toasts{position:relative;z-index:1}
+/* The field sits at the same depth as the hero video, so the existing
+   `.mast, main, footer` raise above already covers it. Do NOT re-raise fixed or
+   sticky elements here: a blanket `position:relative;z-index:1` on .modal,
+   .topbar, .botnav and .toasts wins on source order and drops the modal below
+   its own backdrop, which then blurs the modal instead of the page. */
 
 /* ==================== panel entrance ====================
    A load-in, not a scroll gate. The resting state is fully visible, so if the
@@ -487,3 +490,9 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
 @media (prefers-reduced-motion:reduce){
   .aurora{display:none}
 }
+
+/* An issuer CMC has registered but indexed no tokens for. Real state, not a
+   failed load, so it reads as quieter rather than broken. */
+.isscard.empty{opacity:.62}
+.isscard.empty .sub{color:var(--ink-3);font-style:italic}
+.isscard.empty:hover{opacity:1}

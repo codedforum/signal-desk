@@ -673,7 +673,8 @@ async function loadIssuers() {
     const r = await fetch('api/rwa/issuers').then((x) => x.json());
     grid.textContent = '';
     if (!r.ok || !r.data?.length) { grid.append(el('p', 'skel', 'no issuers returned')); return; }
-    for (const i of r.data) {
+    const ordered = [...r.data].sort((a, c) => (c.tokens || 0) - (a.tokens || 0));
+    for (const i of ordered) {
       const b = el('button', 'isscard');
       if (i.logo) {
         const img = el('img', 'isslogo');
@@ -683,7 +684,10 @@ async function loadIssuers() {
       }
       const t = el('div', 'isstext');
       t.append(el('strong', null, i.name));
-      t.append(el('span', 'sub', i.tokens + ' tokenised'));
+      // A registered issuer with nothing indexed is a real state, not an error.
+      // Saying "0 tokenised" reads like a failed load, so it says what it means.
+      t.append(el('span', 'sub', i.tokens ? i.tokens + ' tokenised' : 'registered, none indexed yet'));
+      if (!i.tokens) b.classList.add('empty');
       b.append(t);
       b.onclick = () => {
         $$('.isscard').forEach((x) => x.classList.remove('on'));
@@ -705,7 +709,12 @@ async function loadIssuer(id, name) {
     tb.textContent = '';
     if (!r.ok || !r.tokens?.length) {
       t.textContent = name;
-      tb.innerHTML = '<tr><td colspan="3" class="skel">no tokens returned</td></tr>';
+      const why = r.ok
+        ? `CoinMarketCap lists ${name} as an issuer but indexes no tokens for it yet. Registered to tokenise, nothing live.`
+        : 'that issuer could not be loaded';
+      tb.innerHTML = '';
+      const tr = el('tr'), td = el('td', 'skel', why);
+      td.colSpan = 3; tr.append(td); tb.append(tr);
       return;
     }
     const shown = r.tokens.slice(0, 60);
