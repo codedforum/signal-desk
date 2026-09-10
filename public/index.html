@@ -4,27 +4,44 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Signal Desk</title>
-<meta name="description" content="Market regime, breadth and sector rotation, built on the CoinMarketCap API.">
+<meta name="description" content="Market regime, breadth, 3D sector rotation and chain reach, built on the CoinMarketCap API.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
-<link rel="icon" href="/img/mark-64.png" type="image/png">
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="img/mark-64.png" type="image/png">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+<!-- ambient hero video, decorative only, not loaded when motion is reduced -->
+<div class="herovid" aria-hidden="true">
+  <video id="bgvid" muted loop playsinline poster="img/hero.jpg"></video>
+  <div class="herovid-veil"></div>
+</div>
+
 <header class="mast">
   <div class="wrap masthead">
-    <div class="brandblock">
-      <img class="mark" src="/img/mark.png" width="38" height="38" alt="" aria-hidden="true">
+    <a class="brandblock" href="#desk">
+      <img class="mark" src="img/mark.png" width="40" height="40" alt="">
       <div>
         <h1>Signal Desk</h1>
-        <p class="sub">Market regime, breadth and rotation. Every number on this page came from a live CoinMarketCap call.</p>
+        <p class="sub">Every number here came from a live CoinMarketCap call.</p>
       </div>
-    </div>
+    </a>
+
+    <nav class="menu" id="menu" aria-label="Views">
+      <a href="#desk"     data-view="desk">Desk</a>
+      <a href="#rotation" data-view="rotation">Rotation</a>
+      <a href="#screener" data-view="screener">Screener</a>
+      <a href="#portfolio" data-view="portfolio">Portfolio</a>
+      <a href="#rwa"      data-view="rwa">RWA</a>
+      <a href="#chains"   data-view="chains">Chains</a>
+      <a href="#api"      data-view="api">API</a>
+      <span class="menu-ink" id="menu-ink"></span>
+    </nav>
+
     <div class="statuscluster">
       <span class="pill" id="pill-clock">loading</span>
-      <span class="pill" id="pill-credits">credits</span>
       <span class="pill" id="pill-plan">plan</span>
     </div>
   </div>
@@ -32,8 +49,10 @@
 
 <main class="wrap">
 
-  <!-- regime -->
-  <section class="panel panel-regime" id="panel-regime">
+<!-- ============================ DESK ============================ -->
+<section class="view" id="view-desk">
+
+  <section class="panel panel-regime reveal">
     <div class="phead">
       <h2>Regime</h2>
       <code class="src">/v1/global-metrics/quotes/latest &nbsp; /v3/fear-and-greed/latest</code>
@@ -44,84 +63,167 @@
         <p class="stance-why" id="regime-why">Waiting for the first call to return.</p>
         <p class="divergence" id="regime-divergence" hidden></p>
       </div>
-      <dl class="statgrid" id="regime-stats"></dl>
+      <div class="gaugewrap">
+        <canvas id="gauge" width="260" height="260" aria-label="fear and greed gauge"></canvas>
+        <div class="gauge-center"><span id="gauge-val">0</span><small id="gauge-lab">sentiment</small></div>
+      </div>
     </div>
+    <dl class="statgrid" id="regime-stats"></dl>
   </section>
 
   <div class="row2">
-    <!-- breadth -->
-    <section class="panel" id="panel-breadth">
-      <div class="phead">
-        <h2>Breadth</h2>
-        <code class="src">/v1/cryptocurrency/listings/latest</code>
-      </div>
-      <p class="lede">A tape can rise on a handful of names while most things bleed. This is how much of the top 200 is actually participating.</p>
-      <div class="breadthbar" id="breadth-bar" role="img" aria-label="advancing versus declining">
-        <div class="bb-up" id="bb-up"></div><div class="bb-dn" id="bb-dn"></div>
-      </div>
+    <section class="panel reveal">
+      <div class="phead"><h2>Breadth</h2><code class="src">/v1/cryptocurrency/listings/latest</code></div>
+      <p class="lede">A tape can rise on a handful of names while the median asset bleeds. This is real participation.</p>
+      <div class="breadthbar"><div class="bb-up" id="bb-up"></div><div class="bb-dn" id="bb-dn"></div></div>
       <dl class="statgrid tight" id="breadth-stats"></dl>
     </section>
 
-    <!-- chains -->
-    <section class="panel" id="panel-chains">
-      <div class="phead">
-        <h2>Chain reach</h2>
-        <code class="src">/v1/dex/platform/list</code>
-      </div>
-      <p class="lede">The reason this was built on CMC. The long tail networks are indexed, not just the majors.</p>
-      <ul class="chainlist" id="chain-list"></ul>
-      <p class="foot" id="chain-total"></p>
+    <section class="panel reveal">
+      <div class="phead"><h2>Watchlist</h2><code class="src">/v1/cryptocurrency/quotes/latest</code></div>
+      <p class="lede">Batched into one call regardless of length, so a long list costs the same single credit.</p>
+      <form class="lookup" id="watch-form">
+        <input id="watch-input" type="text" placeholder="add a symbol, for example SOL" autocomplete="off" spellcheck="false">
+        <button type="submit">Add</button>
+      </form>
+      <div class="tablewrap"><table class="tbl" id="watch-table">
+        <thead><tr><th>Asset</th><th class="num">Price</th><th class="num">24h</th><th class="num">7d</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table></div>
     </section>
   </div>
+</section>
 
-  <!-- rotation -->
-  <section class="panel" id="panel-rotation">
+<!-- ========================== ROTATION ========================== -->
+<section class="view" id="view-rotation" hidden>
+  <section class="panel reveal">
     <div class="phead">
-      <h2>Rotation</h2>
+      <h2>Sector rotation in three dimensions</h2>
       <code class="src">/v1/cryptocurrency/categories</code>
     </div>
-    <p class="lede">Which sectors money moved into over the last day, ranked by capital-weighted change.</p>
+    <p class="lede">Height is market cap on a log scale, colour is the 24 hour move. Drag to orbit, scroll to zoom, hover a bar to read it.</p>
+    <div id="three-wrap" class="three-wrap">
+      <div class="three-hint" id="three-hint">drag to orbit</div>
+      <div class="three-tip" id="three-tip" hidden></div>
+    </div>
     <div class="tablewrap"><table class="tbl" id="rotation-table">
       <thead><tr><th>Sector</th><th class="num">Tokens</th><th class="num">Market cap</th><th class="num">24h</th></tr></thead>
       <tbody></tbody>
     </table></div>
   </section>
+</section>
 
-  <!-- movers -->
-  <div class="row2">
-    <section class="panel" id="panel-gainers">
-      <div class="phead"><h2>Leading</h2><code class="src">derived, listings/latest</code></div>
-      <div class="tablewrap"><table class="tbl" id="gainers-table">
-        <thead><tr><th>Asset</th><th class="num">Price</th><th class="num">24h</th><th class="num">7d</th></tr></thead>
-        <tbody></tbody>
-      </table></div>
-    </section>
-    <section class="panel" id="panel-losers">
-      <div class="phead"><h2>Lagging</h2><code class="src">derived, listings/latest</code></div>
-      <div class="tablewrap"><table class="tbl" id="losers-table">
-        <thead><tr><th>Asset</th><th class="num">Price</th><th class="num">24h</th><th class="num">7d</th></tr></thead>
-        <tbody></tbody>
-      </table></div>
-    </section>
-  </div>
-
-  <!-- capability -->
-  <section class="panel panel-cap" id="panel-cap">
-    <div class="phead">
-      <h2>What this key can reach</h2>
-      <code class="src">probed live, not assumed</code>
+<!-- ========================== SCREENER ========================== -->
+<section class="view" id="view-screener" hidden>
+  <section class="panel reveal">
+    <div class="phead"><h2>Screener</h2><code class="src">/v1/cryptocurrency/listings/latest</code></div>
+    <p class="lede">The whole top 200 in one call, filtered in the browser. No extra credits are spent as you narrow it.</p>
+    <div class="filters" id="filters">
+      <label>Search <input id="f-q" type="text" placeholder="symbol or name" autocomplete="off"></label>
+      <label>Min 24h % <input id="f-min" type="number" step="1" placeholder="-100"></label>
+      <label>Max 24h % <input id="f-max" type="number" step="1" placeholder="100"></label>
+      <label>Min volume <input id="f-vol" type="number" step="1000000" placeholder="0"></label>
+      <label>Sort
+        <select id="f-sort">
+          <option value="change24h">24h change</option>
+          <option value="change7d">7d change</option>
+          <option value="volume24h">Volume</option>
+          <option value="marketCap" selected>Market cap</option>
+          <option value="price">Price</option>
+        </select>
+      </label>
+      <button type="button" id="f-reset">Reset</button>
+      <span class="fcount" id="f-count"></span>
     </div>
-    <p class="lede">Endpoints are checked against the live API at load. A refusal here is a subscription limit, not a failure, and the panels above are drawn from whatever is actually reachable.</p>
+    <div class="tablewrap"><table class="tbl" id="screen-table">
+      <thead><tr><th>Asset</th><th class="num">Price</th><th class="num">1h</th><th class="num">24h</th><th class="num">7d</th><th class="num">Volume</th><th class="num">Market cap</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+</section>
+
+<!-- ========================= PORTFOLIO ========================== -->
+<section class="view" id="view-portfolio" hidden>
+  <section class="panel reveal">
+    <div class="phead"><h2>Portfolio and profit</h2><code class="src">/v1/cryptocurrency/quotes/latest</code></div>
+    <p class="lede">Holdings are stored in this browser only, never sent anywhere, and valued live. The whole book prices in one batched call.</p>
+    <form class="lookup grid4" id="pos-form">
+      <input id="pos-sym" type="text" placeholder="symbol" autocomplete="off" spellcheck="false">
+      <input id="pos-qty" type="number" step="any" placeholder="quantity">
+      <input id="pos-cost" type="number" step="any" placeholder="entry price, USD">
+      <button type="submit">Add holding</button>
+    </form>
+    <dl class="statgrid" id="pf-stats"></dl>
+    <div class="tablewrap"><table class="tbl" id="pf-table">
+      <thead><tr><th>Asset</th><th class="num">Qty</th><th class="num">Entry</th><th class="num">Price</th><th class="num">Value</th><th class="num">PnL</th><th class="num">PnL %</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <section class="panel reveal">
+    <div class="phead"><h2>Alerts</h2><code class="src">evaluated in browser against live quotes</code></div>
+    <p class="lede">Set a level and the desk checks it on every refresh. Triggered alerts are highlighted and, with permission, raise a browser notification.</p>
+    <form class="lookup grid4" id="alert-form">
+      <input id="al-sym" type="text" placeholder="symbol" autocomplete="off" spellcheck="false">
+      <select id="al-dir"><option value="above">rises above</option><option value="below">falls below</option></select>
+      <input id="al-px" type="number" step="any" placeholder="price, USD">
+      <button type="submit">Add alert</button>
+    </form>
+    <ul class="alertlist" id="alert-list"></ul>
+  </section>
+</section>
+
+<!-- ============================ RWA ============================= -->
+<section class="view" id="view-rwa" hidden>
+  <section class="panel reveal">
+    <div class="phead"><h2>Tokenised real world assets</h2><code class="src">/v1/cryptocurrency/categories &nbsp; /v1/cryptocurrency/category</code></div>
+    <p class="lede">The documented RWA endpoints answer 404 on every path, but the tokenised asset taxonomy lives inside categories. Equities, ETFs, commodities, treasuries and real estate, reached through the other door. Select a sector to load its constituents.</p>
+    <div class="rwagrid" id="rwa-grid"></div>
+    <h3 class="subhead" id="rwa-title" hidden></h3>
+    <div class="tablewrap"><table class="tbl" id="rwa-table" hidden>
+      <thead><tr><th>Asset</th><th class="num">Price</th><th class="num">24h</th><th class="num">7d</th><th class="num">Market cap</th></tr></thead><tbody></tbody>
+    </table></div>
+  </section>
+</section>
+
+<!-- =========================== CHAINS =========================== -->
+<section class="view" id="view-chains" hidden>
+  <section class="panel reveal">
+    <div class="phead"><h2>Chain reach</h2><code class="src">/v1/dex/platform/list</code></div>
+    <p class="lede">The reason this was built on CMC. Long tail networks are indexed, not just the majors.</p>
+    <ul class="chainlist" id="chain-list"></ul>
+    <form class="lookup wide" id="chain-form" onsubmit="return false">
+      <input id="chain-search" type="text" placeholder="search every indexed network" autocomplete="off" spellcheck="false">
+    </form>
+    <div class="tablewrap"><table class="tbl" id="chain-table">
+      <thead><tr><th>Network</th><th class="num">Platform id</th><th class="num">Chain id</th></tr></thead><tbody></tbody>
+    </table></div>
+    <p class="foot" id="chain-total"></p>
+  </section>
+</section>
+
+<!-- ============================ API ============================= -->
+<section class="view" id="view-api" hidden>
+  <section class="panel panel-cap reveal">
+    <div class="phead"><h2>What this key can reach</h2><code class="src">probed live, not assumed</code></div>
+    <p class="lede">Every endpoint is checked against the live API with the correct method. A refusal here is a subscription limit, not a failure, and the panels are drawn from whatever is reachable.</p>
     <ul class="caplist" id="cap-list"></ul>
   </section>
+  <section class="panel reveal">
+    <div class="phead"><h2>Spend</h2><code class="src">credit accounting</code></div>
+    <p class="lede">The free plan allows 15,000 credits a month. Responses and refusals are both cached with explicit TTLs, so a full desk render costs five.</p>
+    <dl class="statgrid" id="usage-stats"></dl>
+  </section>
+</section>
 
 </main>
 
 <footer class="wrap site-foot">
-  <p>Built on the CoinMarketCap API. Regime, breadth, rotation and movers are computed from free-tier endpoints, so the desk is fully usable without a paid plan.</p>
+  <p>Built on the CoinMarketCap API. Regime, breadth, rotation, movers, lookup and chain reach all run on free-tier endpoints, so the desk is fully usable without a paid plan.</p>
   <p class="mono" id="foot-usage"></p>
 </footer>
 
-<script src="/app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

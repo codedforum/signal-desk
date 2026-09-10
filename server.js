@@ -68,6 +68,90 @@ app.get('/api/extra/:what', async (req, res) => {
   res.json({ ok: r.ok, verdict: r.verdict, status: r.status, msg: r.msg, data: r.data });
 });
 
+// Lookup and watchlist. Both ride /v1/cryptocurrency/quotes/latest, which is free
+// and costs one credit per call no matter how many symbols, so the watchlist is
+// deliberately batched into a single request.
+app.get('/api/quote', async (req, res) => {
+  const syms = String(req.query.symbol || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!syms.length) return res.status(400).json({ ok: false, error: 'symbol required' });
+  const r = await cmc.quotes(syms);
+  if (!r.ok) return res.json({ ok: false, verdict: r.verdict, msg: r.msg, data: null });
+  const out = Object.values(r.data || {}).map((c) => {
+    const q = (Array.isArray(c) ? c[0] : c);
+    const u = q?.quote?.USD || {};
+    return {
+      id: q.id, symbol: q.symbol, name: q.name, rank: q.cmc_rank,
+      price: u.price ?? null,
+      change1h: u.percent_change_1h ?? null,
+      change24h: u.percent_change_24h ?? null,
+      change7d: u.percent_change_7d ?? null,
+      change30d: u.percent_change_30d ?? null,
+      volume24h: u.volume_24h ?? null,
+      marketCap: u.market_cap ?? null,
+      supply: q.circulating_supply ?? null,
+      maxSupply: q.max_supply ?? null,
+    };
+  });
+  res.json({ ok: true, data: out, usage: cmc.usage() });
+});
+
+// Full network list, for the searchable chain view.
+app.get('/api/chains', async (_req, res) => {
+  const r = await cmc.platforms();
+  if (!r.ok) return res.json({ ok: false, verdict: r.verdict, data: [] });
+  const rows = (r.data || []).map((x) => ({
+    id: x.id, name: x.n || x.dn || '', short: x.dn || '', chainId: x.chId ?? null, explorer: x.uf || '',
+  })).filter((x) => x.name).sort((a, b) => a.name.localeCompare(b.name));
+  res.json({ ok: true, total: rows.length, data: rows });
+});
+
+// Real world assets. The documented /v1/rwa/* endpoints answer 404 on every path
+// tried, but the tokenised asset taxonomy is present inside categories, so the
+// sector is reachable through that door instead. These ids were read from a live
+// categories call, not guessed.
+const RWA_CATEGORIES = [
+  { id: '6400b58c1701313dc2e853a9', label: 'Real World Assets Protocols' },
+  { id: '68639a79358e0763b448bf51', label: 'Tokenized ETFs' },
+  { id: '6a8f9cb3246a6f3c6e2d9040', label: 'Robinhood Stock' },
+  { id: '6a2bd5c097c45356b1a61372', label: 'bStocks' },
+  { id: '68639a4f358e0763b448bf0c', label: 'Tokenized commodities' },
+  { id: '625d09d246203827ab52dd53', label: 'Tokenized Gold' },
+  { id: '68639aa7358e0763b448bf8a', label: 'Tokenized Treasury Bills' },
+  { id: '68639b08358e0763b448c036', label: 'Tokenized Treasury Bonds' },
+  { id: '6051a81466fc1b42617d6daf', label: 'Real Estate' },
+];
+
+app.get('/api/rwa', async (_req, res) => {
+  const cats = await cmc.categories(5000);
+  const byId = new Map((cats.data || []).map((c) => [c.id, c]));
+  const out = RWA_CATEGORIES.map(({ id, label }) => {
+    const c = byId.get(id);
+    return c ? {
+      id, label,
+      tokens: c.num_tokens ?? 0,
+      marketCap: Number(c.market_cap || 0),
+      change24h: +Number(c.market_cap_change || 0).toFixed(2),
+      volume24h: Number(c.volume || 0),
+    } : { id, label, tokens: 0, marketCap: 0, change24h: 0, volume24h: 0, missing: true };
+  }).filter((r) => !r.missing);
+  res.json({ ok: cats.ok, verdict: cats.verdict, data: out, usage: cmc.usage() });
+});
+
+// Constituents of one RWA category.
+app.get('/api/rwa/:id', async (req, res) => {
+  const r = await cmc.category(req.params.id, 60);
+  if (!r.ok) return res.json({ ok: false, verdict: r.verdict, msg: r.msg, data: null });
+  const coins = (r.data?.coins || []).map((c) => ({
+    id: c.id, symbol: c.symbol, name: c.name, rank: c.cmc_rank,
+    price: c.quote?.USD?.price ?? null,
+    change24h: +Number(c.quote?.USD?.percent_change_24h ?? 0).toFixed(2),
+    change7d: +Number(c.quote?.USD?.percent_change_7d ?? 0).toFixed(2),
+    marketCap: c.quote?.USD?.market_cap ?? null,
+    volume24h: c.quote?.USD?.volume_24h ?? null,
+  })).sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0));
+  res.json({ ok: true, name: r.data?.name || '', description: (r.data?.description || '').slice(0, 400), data: coins });
+});
+
 app.listen(PORT, () => {
   console.log(`[cmc-signal] listening on ${PORT}`);
   console.log(`[cmc-signal] key present: ${!!process.env.CMC_API_KEY}`);

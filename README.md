@@ -25,6 +25,41 @@ npm start                 # http://localhost:3131
 npm run capability        # what your key can actually reach
 ```
 
+## All four tracks, one product
+
+| Track | In this build |
+|---|---|
+| **Markets and Trading Tools** | Screener with local filtering, watchlist, portfolio with live PnL, price alerts evaluated client side |
+| **AI Agents and Automation** | `mcp/server.js`, an MCP server exposing six tools over stdio to any LLM client |
+| **Data and Visualisation** | Regime read, sentiment gauge, breadth bar, interactive 3D sector rotation, chain explorer |
+| **Real World Assets** | Tokenised equities, ETFs, commodities, gold, treasuries and real estate, with constituents |
+
+Submitted under one track, but the product covers all four.
+
+### The MCP server
+
+Six tools, and they expose the ANALYSIS rather than thin endpoint wrappers. A model
+asking "what is the market doing" wants a regime read and a breadth number, not 200
+rows of JSON it has to reduce itself, badly.
+
+```
+market_regime     risk on or risk off, with the sentiment versus breadth divergence
+market_breadth    participation across the top N by market cap
+sector_rotation   where money moved, by sector
+quote             live price for one or many symbols, batched into one credit
+chain_coverage    which networks CMC indexes, and their platform ids
+api_capability    what the key can actually reach, so a model never invents an answer
+```
+
+Install:
+
+```bash
+claude mcp add signal-desk -- node /path/to/cmc-signal/mcp/server.js
+```
+
+`api_capability` matters more than it looks. Without it a model told "no data" cannot
+tell a subscription limit from a real absence, and will confidently make something up.
+
 ## Endpoints used, explicitly
 
 Every panel names its source in the UI as well as here.
@@ -88,10 +123,19 @@ have removed a whole afternoon.
 while most of the API returns readable ones. Matching on `name` returned zero results
 for chains that were all present. Nearly reported that CMC does not cover Base.
 
-**4. The RWA endpoints are documented but not reachable.** The endpoint overview lists a
-Real World Assets category, and CMC's own published agent skills contain no RWA
-references. Every path tried returned 404. Either it is not live yet or it is not
-discoverable, and the docs imply otherwise.
+**4. The RWA endpoints are documented but not reachable, and the data is there anyway.**
+The endpoint overview lists a Real World Assets category. Every path tried returned 404,
+and CMC's own published agent skills contain no RWA references at all. But the tokenised
+asset taxonomy does exist, inside categories: `Real World Assets Protocols` with 217
+tokens and $36.0B, plus `Tokenized ETFs`, `Robinhood Stock`, `bStocks`,
+`Tokenized commodities`, `Tokenized Gold`, `Tokenized Treasury Bills`, `Tokenized
+Treasury Bonds` and `Real Estate`. The RWA view is built on those, through the other
+door. Worth either shipping the documented endpoints or pointing people at categories.
+
+**5. The 3D view has to survive a missing WebGL context.** Not a CMC issue, but worth
+recording: `THREE.WebGLRenderer` throws rather than returning null, so an old device or a
+blocked context takes the whole script down unless it is wrapped. It degrades to the
+table now.
 
 ## Design notes
 
