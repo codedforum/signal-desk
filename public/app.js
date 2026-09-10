@@ -31,6 +31,138 @@ let SIGNAL = null;
 let LISTINGS = [];
 let CHAINS = [];
 
+/* ======================= modal, toast, tape ========================= */
+
+let modalLast = null;   // element to restore focus to on close
+
+function openModal(title, sub, build) {
+  const m = $('#modal'), bd = $('#modal-backdrop');
+  modalLast = document.activeElement;
+  $('#modal-title').textContent = title;
+  $('#modal-sub').textContent = sub || '';
+  const body = $('#modal-body'); body.textContent = '';
+  build(body);
+  m.hidden = false; bd.hidden = false;
+  document.body.style.overflow = 'hidden';
+  $('#modal-x').focus();
+}
+
+function closeModal() {
+  const m = $('#modal'), bd = $('#modal-backdrop');
+  if (m.hidden) return;
+  m.hidden = true; bd.hidden = true;
+  document.body.style.overflow = '';
+  if (modalLast && modalLast.focus) modalLast.focus();
+}
+
+function toast(msg) {
+  const wrap = $('#toasts'); if (!wrap) return;
+  const t = el('div', 'toast', msg);
+  wrap.append(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 260); }, 2600);
+}
+
+// Detail for one asset, priced live at the moment it is opened.
+async function openAsset(symbol) {
+  openModal(symbol, 'loading live quote', (body) => {
+    for (let i = 0; i < 4; i++) body.append(el('div', 'shimmer'), el('div', null, ' '));
+  });
+  try {
+    const r = await fetch('api/quote?symbol=' + encodeURIComponent(symbol)).then((x) => x.json());
+    const a = r.ok && r.data && r.data[0];
+    if (!a) { $('#modal-body').textContent = ''; $('#modal-body').append(el('p', 'skel', 'no quote returned for ' + symbol)); return; }
+    $('#modal-title').textContent = a.symbol;
+    $('#modal-sub').textContent = `${a.name}${a.rank ? ', rank ' + a.rank : ''}`;
+    const body = $('#modal-body'); body.textContent = '';
+
+    const price = el('p', 'modal-price', usd(a.price)); body.append(price);
+    const chg = el('p', 'stance-why ' + cls(a.change24h), pct(a.change24h) + ' over 24 hours');
+    chg.style.margin = '0 0 6px'; body.append(chg);
+
+    // The free tier has no historical series, so this is the four changes the
+    // quote already returns, drawn to scale. Honest about what it is.
+    const spark = el('div', 'modal-spark');
+    const pts = [a.change30d, a.change7d, a.change24h, a.change1h].map((v) => Number(v) || 0);
+    const span = Math.max(1, ...pts.map(Math.abs));
+    pts.forEach((v, i) => {
+      const b = el('i');
+      b.style.height = Math.max(6, (Math.abs(v) / span) * 100) + '%';
+      b.style.animationDelay = (i * 0.06) + 's';
+      if (v < 0) b.style.background = 'linear-gradient(180deg,var(--dn),rgba(239,68,68,.25))';
+      spark.append(b);
+    });
+    body.append(spark);
+    const lbl = el('p', 'foot', '30d, 7d, 24h, 1h change, drawn to scale');
+    lbl.style.margin = '0 0 14px'; body.append(lbl);
+
+    const grid = el('div', 'mgrid');
+    const cell = (k, v, c) => {
+      const d = el('div');
+      d.append(el('div', 'mk', k));
+      d.append(el('div', 'mv ' + (c || ''), v));
+      grid.append(d);
+    };
+    cell('1 hour', pct(a.change1h), cls(a.change1h));
+    cell('24 hours', pct(a.change24h), cls(a.change24h));
+    cell('7 days', pct(a.change7d), cls(a.change7d));
+    cell('30 days', pct(a.change30d), cls(a.change30d));
+    cell('market cap', usd(a.marketCap));
+    cell('24h volume', usd(a.volume24h));
+    cell('circulating', a.supply ? Math.round(a.supply).toLocaleString() : 'n/a');
+    cell('max supply', a.maxSupply ? Math.round(a.maxSupply).toLocaleString() : 'uncapped');
+    body.append(grid);
+
+    const acts = el('div', 'modal-actions');
+    const w = el('button', null, 'Add to watchlist');
+    w.onclick = () => { addWatch(a.symbol); toast(a.symbol + ' added to your watchlist'); };
+    const al = el('button', 'mini', 'Alert above ' + usd(a.price));
+    al.onclick = () => { addAlert(a.symbol, 'above', a.price); toast('Alert set on ' + a.symbol); };
+    acts.append(w, al); body.append(acts);
+  } catch (e) {
+    $('#modal-body').textContent = '';
+    $('#modal-body').append(el('p', 'skel', 'lookup failed: ' + e.message));
+  }
+}
+
+// Rows become tappable, which is what a phone user expects of a list.
+function makeRowOpen(tr, symbol) {
+  tr.dataset.sym = symbol;
+  tr.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;   // let row buttons do their own job
+    openAsset(symbol);
+  });
+}
+
+/* ---- live ticker tape, duplicated so the loop has no visible seam ---- */
+function renderTape(rows) {
+  const track = $('#tape-track'); if (!track || !rows || !rows.length) return;
+  track.textContent = '';
+  const items = rows.slice(0, 22);
+  for (let pass = 0; pass < 2; pass++) {
+    for (const r of items) {
+      const i = el('span', 'tape-item');
+      i.append(el('span', 'ts', r.symbol));
+      i.append(el('span', 'tp', usd(r.price)));
+      i.append(el('span', cls(r.change24h), pct(r.change24h)));
+      i.addEventListener('click', () => openAsset(r.symbol));
+      i.style.cursor = 'pointer';
+      track.append(i);
+    }
+  }
+}
+
+/* ---- flash a value that moved since the last refresh ---- */
+const lastSeen = new Map();
+function flashIfChanged(node, key, value) {
+  const prev = lastSeen.get(key);
+  if (prev != null && value != null && prev !== value) {
+    node.classList.remove('flash-up', 'flash-dn');
+    void node.offsetWidth;
+    node.classList.add(value > prev ? 'flash-up' : 'flash-dn');
+  }
+  if (value != null) lastSeen.set(key, value);
+}
+
 /* ============================== router ============================== */
 
 const VIEWS = ['desk', 'rotation', 'screener', 'portfolio', 'rwa', 'chains', 'api'];
@@ -222,6 +354,7 @@ function renderScreen() {
   if (!rows.length) { tb.innerHTML = '<tr><td colspan="8" class="skel">nothing matches those filters</td></tr>'; return; }
   for (const r of rows.slice(0, 120)) {
     const tr = el('tr');
+    makeRowOpen(tr, r.symbol);
     tr.append(assetCell(r));
     tr.append(el('td', 'num', usd(r.price)));
     tr.append(el('td', 'num ' + cls(r.change1h), pct(r.change1h)));
@@ -256,8 +389,11 @@ async function loadWatch() {
     if (!r.ok) { tb.innerHTML = `<tr><td colspan="5" class="skel">${r.verdict === 'plan' ? 'quotes need a paid plan' : 'quote lookup failed'}</td></tr>`; return; }
     for (const a of r.data) {
       const tr = el('tr');
+      makeRowOpen(tr, a.symbol);
       tr.append(assetCell(a));
-      tr.append(el('td', 'num', usd(a.price)));
+      const pxCell = el('td', 'num', usd(a.price));
+      flashIfChanged(pxCell, 'w:' + a.symbol, a.price);
+      tr.append(pxCell);
       tr.append(el('td', 'num ' + cls(a.change24h), pct(a.change24h)));
       tr.append(el('td', 'num ' + cls(a.change7d), pct(a.change7d)));
       const td = el('td'), b = el('button', 'mini', 'remove');
@@ -400,6 +536,7 @@ async function loadRwaCat(id, label) {
     t.textContent = `${label}, ${r.data.length} constituents by market cap`;
     for (const a of r.data) {
       const tr = el('tr');
+      makeRowOpen(tr, a.symbol);
       tr.append(assetCell(a));
       tr.append(el('td', 'num', usd(a.price)));
       tr.append(el('td', 'num ' + cls(a.change24h), pct(a.change24h)));
@@ -670,6 +807,7 @@ async function load() {
     const g = (r.movers && r.movers.gainers) || [], l = (r.movers && r.movers.losers) || [];
     LISTINGS = [...g, ...l].filter((v, i, a) => a.findIndex((x) => x.symbol === v.symbol) === i);
     renderScreen();
+    renderTape(LISTINGS);
 
     $('#pill-clock').textContent = 'updated ' + new Date(r.at).toUTCString().slice(17, 25) + ' UTC';
     if (r.usage) $('#foot-usage').textContent = `${r.usage.calls} calls, ${r.usage.creditsUsed} credits, key ${r.usage.hasKey ? 'present' : 'missing'}`;
@@ -686,7 +824,13 @@ async function load() {
   if (location.hash.slice(1) === 'rotation') initThree();
 }
 
-$('#watch-form').addEventListener('submit', (e) => { e.preventDefault(); addWatch($('#watch-input').value); $('#watch-input').value = ''; });
+$('#watch-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const v = $('#watch-input').value.trim();
+  if (!v) return;
+  addWatch(v); toast(v.toUpperCase() + ' added to your watchlist');
+  $('#watch-input').value = '';
+});
 $('#chain-search').addEventListener('input', (e) => renderChainTable(e.target.value));
 ['#f-q', '#f-min', '#f-max', '#f-vol', '#f-sort'].forEach((s) => $(s).addEventListener('input', renderScreen));
 $('#f-reset').addEventListener('click', () => {
@@ -697,14 +841,14 @@ $('#pos-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const s = $('#pos-sym').value, q = $('#pos-qty').value, c = $('#pos-cost').value;
   if (!s || !q || !c) return;
-  addPos(s, q, c);
+  addPos(s, q, c); toast(String(s).toUpperCase() + ' added to your book');
   $('#pos-sym').value = ''; $('#pos-qty').value = ''; $('#pos-cost').value = '';
 });
 $('#alert-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const s = $('#al-sym').value, d = $('#al-dir').value, p = $('#al-px').value;
   if (!s || !p) return;
-  addAlert(s, d, p);
+  addAlert(s, d, p); toast('Alert set on ' + String(s).toUpperCase());
   $('#al-sym').value = ''; $('#al-px').value = '';
 });
 
@@ -713,7 +857,27 @@ $('#more-btn').addEventListener('click', () => {
   if (sh.hidden) openSheet(); else closeSheet();
 });
 $('#sheet-backdrop').addEventListener('click', closeSheet);
-addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
+$('#modal-x').addEventListener('click', closeModal);
+$('#modal-backdrop').addEventListener('click', closeModal);
+addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeSheet(); } });
+
+// Swipe the sheet style modal down to dismiss, as a phone user expects.
+(() => {
+  const m = $('#modal'); let y0 = null;
+  m.addEventListener('touchstart', (e) => { if (m.scrollTop <= 0) y0 = e.touches[0].clientY; }, { passive: true });
+  m.addEventListener('touchmove', (e) => {
+    if (y0 == null) return;
+    const dy = e.touches[0].clientY - y0;
+    if (dy > 0) m.style.transform = `translateY(${dy}px)`;
+  }, { passive: true });
+  m.addEventListener('touchend', (e) => {
+    if (y0 == null) return;
+    const dy = (e.changedTouches[0].clientY - y0);
+    m.style.transform = '';
+    if (dy > 90) closeModal();
+    y0 = null;
+  });
+})();
 
 // The ambient video is decorative, so it is only fetched when motion is welcome.
 if (!REDUCED) {

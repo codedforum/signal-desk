@@ -51,6 +51,9 @@
       <span class="pill" id="pill-plan">plan</span>
     </div>
   </div>
+  <div class="tape" id="tape" aria-label="Live prices" role="marquee">
+    <div class="tape-track" id="tape-track"></div>
+  </div>
 </header>
 
 <main class="wrap">
@@ -251,6 +254,20 @@
   <p>Built on the CoinMarketCap API. Regime, breadth, rotation, movers, lookup and chain reach all run on free-tier endpoints, so the desk is fully usable without a paid plan.</p>
   <p class="mono" id="foot-usage"></p>
 </footer>
+
+<!-- asset detail modal, a sheet on phones and a centred dialog on desktop -->
+<div class="modal-backdrop" id="modal-backdrop" hidden></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" hidden>
+  <span class="grab" aria-hidden="true"></span>
+  <button class="modal-x" id="modal-x" aria-label="Close">&times;</button>
+  <div class="modal-head">
+    <h2 id="modal-title">Asset</h2>
+    <p id="modal-sub"></p>
+  </div>
+  <div class="modal-body" id="modal-body"></div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="app.js"></script>

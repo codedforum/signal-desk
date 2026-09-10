@@ -145,6 +145,13 @@ software context can be lost without throwing, so re-entering the view resizes a
 redraws rather than trusting what is on the canvas. That one only showed up when a test
 navigated away and back: a direct visit always looked fine.
 
+**7. A base rule written after its own media query wins on source order.** The phone
+drag handle on the asset sheet stayed visible on the 1440px centred dialog, where it
+means nothing. `.modal .grab{display:block}` and `@media (min-width:760px){.modal
+.grab{display:none}}` carry identical specificity, so the later one wins and mine was
+later. Caught by asserting the computed style in Chrome rather than reading the CSS.
+Declaration order is the fix, not `!important`.
+
 ## Mobile first
 
 The base stylesheet is the phone. Wider screens are the enhancement, added with
@@ -162,6 +169,28 @@ The base stylesheet is the phone. Wider screens are the enhancement, added with
 - **One finger orbits the 3D view, two fingers pinch to zoom**, since a phone has no
   scroll wheel and page zoom would fight the layout.
 - Tapping a tab returns to the top of the section, the way a native app does.
+
+## Motion and the interaction layer
+
+Motion here is load bearing, not decoration. Each piece answers "did something change"
+or "where am I", which a static table cannot.
+
+- **Asset sheet.** Tapping any row opens a detail sheet: live quote, a scaled bar chart
+  across 1h, 24h, 7d and 30d, eight metric cells, and two actions. It rises from the
+  bottom on a phone, where a sheet is the native idiom, and becomes a centred dialog
+  above 760px, where one is not. Drag it down to dismiss, or press Escape. Focus returns
+  to the row that opened it.
+- **Ticker tape.** The top strip scrolls the current top movers. The content is
+  duplicated and translated by exactly half its width, so the loop has no seam and needs
+  no JavaScript frame loop. It pauses on hover.
+- **Values flash on change.** When a refresh moves a number, that cell pulses once, up
+  in green and down in red. Reading a dashboard should not require diffing it by eye.
+- **Skeletons, not spinners.** Panels shimmer in their final shape while their call is
+  in flight, so the layout never jumps when data lands.
+- **Toasts** confirm actions that have no visible result, such as adding to a watchlist.
+- **Ambient loop.** The hero video is an 8.8 second clip cross faded onto itself so the
+  loop point is invisible, 112KB, muted and `playsinline`. It is a background, so it
+  never competes with a number on the page.
 
 ## Design notes
 
