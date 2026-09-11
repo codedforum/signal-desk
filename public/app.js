@@ -1009,9 +1009,13 @@ function renderCapability(cap) {
   if (!cap || !cap.checks) { ul.append(el('li', 'skel', 'probe failed')); return; }
   for (const c of cap.checks) {
     const li = el('li');
-    li.append(el('span', 'dot ' + (c.verdict === 'ok' ? 'ok' : c.verdict === 'plan' ? 'plan' : 'bad')));
+    const tone = c.verdict === 'ok' ? 'ok' : c.verdict === 'plan' ? 'plan' : c.verdict === 'skipped' ? 'plan' : 'bad';
+    li.append(el('span', 'dot ' + tone));
     li.append(el('span', 'ep', c.method + ' ' + c.path));
-    li.append(el('span', 'vd', c.verdict === 'ok' ? 'reachable' : c.verdict === 'plan' ? 'needs a paid plan' : c.verdict));
+    const label = c.verdict === 'ok' ? 'reachable'
+      : c.verdict === 'plan' ? 'needs a paid plan'
+      : c.verdict === 'skipped' ? 'not probed' : c.verdict;
+    li.append(el('span', 'vd', label));
     ul.append(li);
   }
   const gated = (cap.gated && cap.gated.length) || 0;

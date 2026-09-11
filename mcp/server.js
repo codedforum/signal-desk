@@ -244,16 +244,28 @@ async function runTool(name, args = {}) {
       };
     }
     case 'api_capability': {
+      // Same probe rules as the HTTP capability route: an endpoint that needs an
+      // identifier is called with one, so a working endpoint is never reported
+      // to the model as a bad request.
+      const ids = await cmc.probeIds();
       const checks = await Promise.all(Object.entries(cmc.ENDPOINTS).map(async ([n, e]) => {
-        const isPost = e.method === 'POST';
-        const r = await cmc.call(isPost ? e.path : `${e.path}?limit=1`, {
-          method: e.method, body: isPost ? { time_period: '24h', limit: 1, type: 'gainer' } : null, name: `mcpcap:${n}`,
+        if (e.method === 'POST') {
+          const r = await cmc.call(e.path, {
+            method: e.method, body: { time_period: '24h', limit: 1, type: 'gainer' }, name: `mcpcap:${n}`,
+          });
+          return { tool: n, endpoint: e.path, method: e.method, verdict: r.verdict };
+        }
+        const q = cmc.probeQuery(n, ids);
+        if (q === null) return { tool: n, endpoint: e.path, method: e.method, verdict: 'skipped' };
+        const r = await cmc.call(`${e.path}${e.path.includes('?') ? '&' : '?'}${q}`, {
+          method: e.method, name: `mcpcap:${n}`,
         });
         return { tool: n, endpoint: e.path, method: e.method, verdict: r.verdict };
       }));
       return {
         reachable: checks.filter((c) => c.verdict === 'ok').map((c) => c.endpoint),
         refusedByPlan: checks.filter((c) => c.verdict === 'plan').map((c) => c.endpoint),
+        notProbed: checks.filter((c) => c.verdict === 'skipped').map((c) => c.endpoint),
         checks,
       };
     }

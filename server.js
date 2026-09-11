@@ -42,20 +42,33 @@ app.get('/api/signal', async (_req, res) => {
 // honest answer to "why is that panel empty", and because a submission is asked
 // to name the endpoints it uses.
 app.get('/api/capability', async (_req, res) => {
+  // Resolve the ids the identifier-bearing probes need before firing any of them,
+  // so an endpoint that works is not reported as a bad request.
+  const ids = await cmc.probeIds();
   const checks = await Promise.all(
     Object.entries(cmc.ENDPOINTS).map(async ([name, e]) => {
-      const isPost = e.method === 'POST';
-      const r = await cmc.call(isPost ? e.path : `${e.path}${e.path.includes('?') ? '&' : '?'}limit=1`, {
+      const base = { name, path: e.path, method: e.method, declaredTier: e.tier };
+      if (e.method === 'POST') {
+        const r = await cmc.call(e.path, {
+          method: e.method,
+          body: { time_period: '24h', limit: 1, type: 'gainer' },
+          name: `cap:${name}`,
+        });
+        return { ...base, verdict: r.verdict, status: r.status };
+      }
+      const q = cmc.probeQuery(name, ids);
+      if (q === null) return { ...base, verdict: 'skipped', status: 0 };
+      const r = await cmc.call(`${e.path}${e.path.includes('?') ? '&' : '?'}${q}`, {
         method: e.method,
-        body: isPost ? { time_period: '24h', limit: 1, type: 'gainer' } : null,
         name: `cap:${name}`,
       });
-      return { name, path: e.path, method: e.method, declaredTier: e.tier, verdict: r.verdict, status: r.status };
+      return { ...base, verdict: r.verdict, status: r.status };
     })
   );
   const usable = checks.filter((c) => c.verdict === 'ok').map((c) => c.name);
   const gated = checks.filter((c) => c.verdict === 'plan').map((c) => c.name);
-  res.json({ ok: true, usable, gated, checks, usage: cmc.usage() });
+  const skipped = checks.filter((c) => c.verdict === 'skipped').map((c) => c.name);
+  res.json({ ok: true, usable, gated, skipped, checks, usage: cmc.usage() });
 });
 
 // Paid-tier extras. Each returns its verdict so the UI can say "your plan does
