@@ -23,6 +23,7 @@ npm install
 echo "CMC_API_KEY=your-key" > .env
 npm start                 # http://localhost:3131
 npm run capability        # what your key can actually reach
+npm test                  # probe rules, no key and no network needed
 ```
 
 ## All four tracks, one product
