@@ -93,5 +93,33 @@ ok(sym('tell me about the trust') === null,              'a word shared by sever
 ok(sym('anything', []) === null,                         'an empty board resolves nothing');
 ok(sym('anything', null) === null,                       'and neither does a missing one');
 
+
+console.log('precision is cut before the model sees it, not after:');
+const t = b.tidy({
+  weightedSpreadBps: 377.7543906992903,
+  price: 4305.783580671026,
+  vwap: 4321.185912345678,
+  volume24h: 1234567.891234,
+  topVenueShare: 0.6412345678,
+  premiumPct: -0.4225116,
+  symbol: 'GOLD',
+  nested: [{ tradableSpreadBps: 12.3456789, price: 1.23456789 }],
+  nothing: null,
+  flag: true,
+});
+ok(t.weightedSpreadBps === 377.8,        'basis points land on one decimal');
+ok(t.price === 4305.7836,                'a price keeps four');
+ok(t.vwap === 4321.1859,                 'and so does a volume weighted price');
+ok(t.volume24h === 1234568,              'volume is a whole number');
+ok(t.topVenueShare === 0.641,            'a share keeps three');
+ok(t.premiumPct === -0.42,               'a percentage keeps two');
+ok(t.symbol === 'GOLD',                  'a string is untouched');
+ok(t.nothing === null,                   'a null is untouched');
+ok(t.flag === true,                      'a boolean is untouched');
+ok(t.nested[0].tradableSpreadBps === 12.3, 'rounding reaches inside arrays');
+ok(t.nested[0].price === 1.2346,          'and inside nested objects');
+ok(b.tidy(Infinity) === Infinity,         'a non finite number is left alone rather than mangled');
+ok(b.tidy('x') === 'x',                   'a bare string survives');
+
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');
 process.exit(fail ? 1 : 0);

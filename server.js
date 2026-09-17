@@ -225,7 +225,8 @@ async function gatherFacts(intent, symbol, question) {
   // it outranks the intent. Handing back the top ten when someone asked about
   // gold is how the answer "there is no tokenised gold" gets produced about an
   // asset that is sitting on the board.
-  const board = (intent === 'spreads' || intent === 'asset') ? await spreadBoard(50) : null;
+  const board = (intent === 'spreads' || intent === 'asset' || intent === 'unknown')
+    ? await spreadBoard(50) : null;
   const named = board && board.ok ? brain.resolveAsset(question, board.data, symbol) : null;
 
   if (intent === 'spreads' && !named) {
@@ -352,7 +353,9 @@ app.post('/api/ask', safe(async (req, res) => {
   const symbol = (routed && routed.symbol) || null;
 
   // 2. real data for that view, from the same functions the pages use.
-  const facts = await gatherFacts(intent, symbol, q);
+  // Rounded before the model ever sees it, because a model repeats the precision
+  // it is given and nobody needs a basis point to thirteen places.
+  const facts = brain.tidy(await gatherFacts(intent, symbol, q));
 
   // 3. prose over those facts and nothing else.
   const ans = await brain.chat({
