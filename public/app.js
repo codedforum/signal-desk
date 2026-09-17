@@ -792,6 +792,92 @@ function spreadTable(s) {
   return wrapEl;
 }
 
+/* ========================= the question box ==========================
+   The panel stays hidden until the instance reports a brain, because an input
+   that answers nothing is worse than no input. */
+
+const ASK_EXAMPLES = [
+  'which tokenised stock is most dislocated right now',
+  'where is tokenised gold cheapest',
+  'what is the market doing today',
+  'who has tokenised the most assets',
+  'what does the free plan refuse',
+];
+
+let askBusy = false;
+
+async function initAsk() {
+  const panel = $('#askpanel');
+  if (!panel) return;
+  let live = false;
+  try {
+    const h = await fetch('api/ask-status').then((r) => r.json());
+    live = !!h.enabled;
+  } catch { live = false; }
+  if (!live) return;                 // stays hidden, no broken affordance
+  panel.hidden = false;
+
+  const row = $('#asksuggest');
+  for (const ex of ASK_EXAMPLES) {
+    const b = el('button', 'askchip', ex);
+    b.type = 'button';
+    b.onclick = () => { $('#askinput').value = ex; askDesk(ex); };
+    row.append(b);
+  }
+  $('#askform').onsubmit = (e) => { e.preventDefault(); askDesk($('#askinput').value); };
+}
+
+async function askDesk(question) {
+  const q = String(question || '').trim();
+  const out = $('#askout');
+  const btn = $('.askgo');
+  if (!q || askBusy) return;
+  askBusy = true;
+  btn.disabled = true;
+  out.textContent = '';
+  out.append(el('p', 'skel', 'reading the same calls the pages make'));
+
+  let r;
+  try {
+    r = await fetch('api/ask', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ q }),
+    }).then((x) => x.json());
+  } catch {
+    r = null;
+  }
+  askBusy = false;
+  btn.disabled = false;
+  out.textContent = '';
+
+  if (!r || !r.ok) {
+    out.append(el('p', 'hint', (r && r.msg) || 'the question box could not be reached'));
+    return;
+  }
+
+  if (r.answer) {
+    out.append(el('p', 'askanswer', r.answer));
+  } else {
+    // The model failed but the data did not, so the data is still worth showing.
+    out.append(el('p', 'hint',
+      `The model did not answer (${r.answerFailed || 'no reply'}), so here is the raw data it was given.`));
+  }
+
+  const meta = el('div', 'askmeta');
+  meta.append(el('span', 'tagband', r.intent === 'unknown' ? 'nothing on file' : r.intent));
+  meta.append(el('span', 'sub', r.routedBy === 'model'
+    ? 'routed by the model, answered from live calls'
+    : 'routed by keywords, answered from live calls'));
+  out.append(meta);
+
+  // The receipts. Every figure in the prose above has to appear in here.
+  const det = el('details', 'askfacts');
+  det.append(el('summary', null, 'the data this answer was built from'));
+  det.append(el('pre', null, JSON.stringify(r.facts, null, 1)));
+  out.append(det);
+}
+
 // A reading against its own past. Drawn by hand rather than with a chart
 // library, because one line and two labels does not justify a dependency.
 function spreadSparkline(points, w = 520, h = 46) {
@@ -1440,4 +1526,5 @@ if (!REDUCED) {
 
 show(location.hash.slice(1) || 'desk');
 load();
+initAsk();
 setInterval(load, 5 * 60 * 1000);

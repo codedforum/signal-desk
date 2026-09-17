@@ -489,6 +489,34 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
   font-variant-numeric:tabular-nums;color:var(--orange)}
 .spreadsay{margin:0;font-size:13px;line-height:1.6;color:var(--ink-2)}
 .spreadsub{margin:0;font-size:12px;line-height:1.55;color:var(--ink-3)}
+/* ---------- the question box ---------- */
+#askform{display:flex;gap:8px;margin:14px 0 10px}
+#askinput{flex:1;min-width:0;font-family:var(--display);font-size:16px;color:var(--ink);
+  background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r);
+  padding:11px 14px;min-height:46px}
+#askinput::placeholder{color:var(--ink-3)}
+#askinput:focus{outline:none;border-color:rgba(249,115,22,.55);background:var(--panel)}
+.askgo{font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--bg);background:var(--orange);border:0;border-radius:var(--r);
+  padding:0 20px;min-height:46px;cursor:pointer;transition:background .18s var(--ease)}
+.askgo:hover{background:#fb8b3c}
+.askgo[disabled]{background:var(--line-2);color:var(--ink-3);cursor:default}
+.askchip{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);background:var(--bg-2);
+  border:1px solid var(--line);border-radius:999px;padding:6px 12px;cursor:pointer;
+  transition:all .18s var(--ease)}
+.askchip:hover{color:var(--orange);border-color:rgba(249,115,22,.45)}
+.askanswer{margin:14px 0 0;font-size:15px;line-height:1.66;color:var(--ink)}
+.askmeta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.askmeta .tagband{cursor:default}
+.askfacts{margin-top:10px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--bg-2);overflow:hidden}
+.askfacts summary{font-family:var(--mono);font-size:11px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--ink-3);padding:10px 13px;cursor:pointer;list-style:none}
+.askfacts summary::-webkit-details-marker{display:none}
+.askfacts summary:hover{color:var(--orange)}
+.askfacts pre{margin:0;padding:0 13px 13px;font-family:var(--mono);font-size:11px;
+  line-height:1.55;color:var(--ink-2);overflow-x:auto;white-space:pre;max-height:340px}
+
 /* ---------- a reading against its own past ---------- */
 .histbox{margin:12px 0 18px}
 .histhead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:7px}

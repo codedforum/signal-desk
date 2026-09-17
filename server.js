@@ -15,6 +15,7 @@ const signal = require('./lib/signal');
 const { wrapperSpread } = require('./lib/spread');
 const { isServed } = require('./lib/served');
 const history = require('./lib/history');
+const brain = require('./lib/brain');
 const { num, usdQuote, rwaAssetRow, spreadBoard } = require('./lib/board');
 
 const app = express();
@@ -35,6 +36,18 @@ const HISTORY_WINDOW_DAYS = Math.min(
 // Matched to the upstream cache TTL, so a snapshot costs the two calls it
 // already made rather than two more.
 const RECORD_MS = Math.max(Number(process.env.RECORD_MS) || 15 * 60 * 1000, 60 * 1000);
+
+// The question box runs on whatever inference is already sitting idle on this
+// host. Unset BRAIN_BASE and the box reports itself unavailable rather than
+// half working, because a dashboard that invents an answer is worse than one
+// that declines to give one.
+const BRAIN = {
+  base: process.env.BRAIN_BASE || '',
+  model: process.env.BRAIN_MODEL || 'gpt-oss:120b-cloud',
+  enabled: !!process.env.BRAIN_BASE,
+};
+const askLimiter = new brain.RateLimiter(
+  Number(process.env.ASK_PER_MIN) || 8, 60 * 1000);
 
 app.use(express.json());
 
@@ -195,6 +208,164 @@ async function liveRwaTypes() {
   rwaTypeCache = { at: Date.now(), types };
   return types;
 }
+
+/* ============================ the question box ===========================
+   Retrieve, then answer. The model chooses which of this app's own views to
+   read and writes the sentence around it. It never supplies a number: every
+   figure in an answer comes from the facts block, which is returned to the
+   client alongside the prose so a reader can check one against the other. */
+
+async function gatherFacts(intent, symbol) {
+  const since = Math.floor(Date.now() / 1000) - HISTORY_WINDOW_DAYS * history.DAY;
+  const withHistory = (r) => ({
+    ...r, history: history.verdict(hist.series(r.id, since).map((x) => x.weighted), r.weightedSpreadBps),
+  });
+
+  if (intent === 'spreads' || (intent === 'asset' && !symbol)) {
+    const board = await spreadBoard(50);
+    if (!board.ok) return { error: 'the spread board is unavailable', verdict: board.verdict };
+    return {
+      view: 'dislocation board',
+      explains: 'weightedSpreadBps ranks by where volume actually trades; tradableSpreadBps is the outright gap',
+      assetsScanned: board.scanned,
+      assetsRankable: board.ranked,
+      mostDislocated: board.data.slice(0, 10).map(withHistory).map((a) => ({
+        symbol: a.symbol, name: a.name, type: a.type,
+        weightedSpreadBps: a.weightedSpreadBps, tradableSpreadBps: a.tradableSpreadBps,
+        vwap: a.vwap, topVenueShare: a.concentration, liquidVolume24h: a.liquidVolume,
+        cheapest: a.cheapest, dearest: a.dearest, history: a.history,
+      })),
+    };
+  }
+
+  if (intent === 'asset') {
+    const board = await spreadBoard(50);
+    const hit = board.ok && board.data.find((a) => (a.symbol || '').toUpperCase() === symbol);
+    if (!hit) {
+      return {
+        view: 'one asset',
+        askedAbout: symbol,
+        error: `${symbol} is not among the assets currently on the board`,
+        availableSymbols: board.ok ? board.data.map((a) => a.symbol).slice(0, 40) : [],
+      };
+    }
+    const detail = await cmc.rwaQuotes([hit.id]);
+    const raw = cmc.rwaRows(detail.data, 'rwa_assets')[0] || {};
+    const tokens = (Array.isArray(raw.tokens) ? raw.tokens : []).map((t) => ({
+      symbol: t.symbol || '', issuer: t.issuer_name || '',
+      price: num(t.price), volume24h: num(t.volume_24h),
+    }));
+    const s = wrapperSpread(tokens, hit.reference);
+    return {
+      view: 'one asset',
+      symbol: hit.symbol, name: hit.name, type: hit.type,
+      referencePrice: hit.reference,
+      weightedSpreadBps: hit.weightedSpreadBps, tradableSpreadBps: hit.tradableSpreadBps,
+      vwap: hit.vwap, topVenueShare: hit.concentration, liquidVolume24h: hit.liquidVolume,
+      history: withHistory(hit).history,
+      wrappers: s ? s.rows.map((r) => ({
+        symbol: r.symbol, issuer: r.issuer, price: r.price, volume24h: r.volume24h,
+        liquidity: r.liquid ? 'liquid' : (r.thin ? 'thin' : 'none'),
+        bpsFromBaseline: r.bpsFromBaseline,
+      })) : [],
+      differentUnit: s ? s.offScale.map((t) => ({ symbol: t.symbol, issuer: t.issuer, price: t.price })) : [],
+    };
+  }
+
+  if (intent === 'regime') {
+    const d = await signal.build({ highlightChains: HIGHLIGHT });
+    return {
+      view: 'market regime',
+      regime: d.regime, breadth: d.breadth, sentiment: d.sentiment,
+      global: d.global, topSectors: (d.sectors || []).slice(0, 8),
+    };
+  }
+
+  if (intent === 'issuers') {
+    const r = await cmc.rwaIssuers(100);
+    if (!r.ok) return { error: 'the issuer list is unavailable', verdict: r.verdict };
+    const rows = cmc.rwaRows(r.data, 'issuers')
+      .map((i) => ({ name: i.name, tokens: i.num_tokens }))
+      .sort((a, b) => (b.tokens || 0) - (a.tokens || 0));
+    return {
+      view: 'issuers',
+      note: 'tokens is how many assets that issuer has tokenised; zero means registered but nothing indexed yet',
+      total: rows.length,
+      issuers: rows.slice(0, 25),
+    };
+  }
+
+  if (intent === 'capability') {
+    return {
+      view: 'plan capability',
+      note: 'this is what the key reached when each endpoint was last probed',
+      creditsUsedThisProcess: cmc.usage().creditsUsed,
+      callsThisProcess: cmc.usage().calls,
+      refusedEndpoints: cmc.usage().refused,
+      endpointsDeclared: Object.keys(cmc.ENDPOINTS).length,
+    };
+  }
+
+  return {
+    view: 'none',
+    note: 'this desk answers questions about the crypto market regime, sector rotation, '
+      + 'tokenised real world assets, the price gaps between their wrappers, the issuers '
+      + 'who mint them, and what this API plan can reach. It has nothing else to hand.',
+  };
+}
+
+// Whether this instance has a brain at all. The client hides the box rather
+// than offering an input that answers nothing.
+app.get('/api/ask-status', (_req, res) => {
+  res.json({ ok: true, enabled: BRAIN.enabled, model: BRAIN.enabled ? BRAIN.model : null });
+});
+
+app.post('/api/ask', safe(async (req, res) => {
+  const q = String((req.body && req.body.q) || '').trim().slice(0, 500);
+  if (!q) return res.json({ ok: false, msg: 'ask a question' });
+  if (!BRAIN.enabled) {
+    return res.json({ ok: false, unavailable: true, msg: 'the question box is not configured on this instance' });
+  }
+
+  const who = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'anon';
+  const gate = askLimiter.take(who);
+  if (!gate.ok) {
+    return res.status(429).json({ ok: false, msg: `too many questions, try again in ${gate.retryInSec}s` });
+  }
+
+  // 1. which of our own views answers this. The model picks, the keyword
+  //    router decides when the model is unreachable or returns nonsense.
+  const cls = await brain.chat({
+    base: BRAIN.base, model: BRAIN.model, system: brain.CLASSIFY_SYSTEM,
+    user: q, timeoutMs: 12000, temperature: 0,
+  });
+  const routed = cls.ok ? brain.parseIntent(cls.content) : null;
+  const intent = (routed && routed.intent) || brain.keywordIntent(q);
+  const symbol = (routed && routed.symbol) || null;
+
+  // 2. real data for that view, from the same functions the pages use.
+  const facts = await gatherFacts(intent, symbol);
+
+  // 3. prose over those facts and nothing else.
+  const ans = await brain.chat({
+    base: BRAIN.base, model: BRAIN.model, system: brain.ANSWER_SYSTEM,
+    user: brain.buildAnswerPrompt(q, facts), timeoutMs: 30000, temperature: 0.2,
+  });
+
+  res.json({
+    ok: true,
+    question: q,
+    intent,
+    symbol,
+    routedBy: routed ? 'model' : 'keywords',
+    answer: ans.ok ? brain.scrubAnswer(ans.content) : '',
+    // Reported, never hidden. A box that silently falls back to a worse answer
+    // teaches the reader to trust it more than they should.
+    answerFailed: ans.ok ? null : ans.msg,
+    facts,
+    usage: cmc.usage(),
+  });
+}));
 
 app.get('/api/rwa/types', safe(async (_req, res) => {
   res.json({ ok: true, all: cmc.RWA_TYPES, populated: await liveRwaTypes() });

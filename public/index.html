@@ -62,6 +62,21 @@
 <!-- ============================ DESK ============================ -->
 <section class="view" id="view-desk">
 
+  <section class="panel reveal" id="askpanel" hidden>
+    <div class="phead">
+      <h2>Ask the desk</h2>
+      <code class="src">POST /api/ask</code>
+    </div>
+    <p class="lede">Plain English over the same live calls the pages make. The model picks which view answers your question and writes the sentence; every number in the reply comes from the data fetched for it, shown underneath so you can check one against the other.</p>
+    <form id="askform" autocomplete="off">
+      <input id="askinput" type="text" maxlength="500" aria-label="your question"
+             placeholder="which tokenised stock is most dislocated right now">
+      <button class="askgo" type="submit">Ask</button>
+    </form>
+    <div class="chiprow" id="asksuggest"></div>
+    <div id="askout" aria-live="polite"></div>
+  </section>
+
   <section class="panel panel-regime reveal">
     <div class="phead">
       <h2>Regime</h2>
