@@ -355,7 +355,10 @@ app.post('/api/ask', safe(async (req, res) => {
   // 2. real data for that view, from the same functions the pages use.
   // Rounded before the model ever sees it, because a model repeats the precision
   // it is given and nobody needs a basis point to thirteen places.
-  const facts = brain.tidy(await gatherFacts(intent, symbol, q));
+  const gathered = brain.tidy(await gatherFacts(intent, symbol, q));
+  // Stated rather than assumed. Without it a model reads liquidVolume24h as a
+  // share count and writes "88.5 million shares" about a dollar figure.
+  const facts = { units: brain.UNITS, ...gathered };
 
   // 3. prose over those facts and nothing else.
   const ans = await brain.chat({
