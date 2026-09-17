@@ -215,20 +215,29 @@ async function liveRwaTypes() {
    figure in an answer comes from the facts block, which is returned to the
    client alongside the prose so a reader can check one against the other. */
 
-async function gatherFacts(intent, symbol) {
+async function gatherFacts(intent, symbol, question) {
   const since = Math.floor(Date.now() / 1000) - HISTORY_WINDOW_DAYS * history.DAY;
   const withHistory = (r) => ({
     ...r, history: history.verdict(hist.series(r.id, since).map((x) => x.weighted), r.weightedSpreadBps),
   });
 
-  if (intent === 'spreads' || (intent === 'asset' && !symbol)) {
-    const board = await spreadBoard(50);
+  // Whether the question names an asset is decided here, not by the model, and
+  // it outranks the intent. Handing back the top ten when someone asked about
+  // gold is how the answer "there is no tokenised gold" gets produced about an
+  // asset that is sitting on the board.
+  const board = (intent === 'spreads' || intent === 'asset') ? await spreadBoard(50) : null;
+  const named = board && board.ok ? brain.resolveAsset(question, board.data, symbol) : null;
+
+  if (intent === 'spreads' && !named) {
     if (!board.ok) return { error: 'the spread board is unavailable', verdict: board.verdict };
     return {
       view: 'dislocation board',
       explains: 'weightedSpreadBps ranks by where volume actually trades; tradableSpreadBps is the outright gap',
       assetsScanned: board.scanned,
       assetsRankable: board.ranked,
+      // The full roster, so an asset outside the top ten is known to exist
+      // rather than reported as absent.
+      allRankedSymbols: board.data.map((a) => a.symbol),
       mostDislocated: board.data.slice(0, 10).map(withHistory).map((a) => ({
         symbol: a.symbol, name: a.name, type: a.type,
         weightedSpreadBps: a.weightedSpreadBps, tradableSpreadBps: a.tradableSpreadBps,
@@ -238,15 +247,14 @@ async function gatherFacts(intent, symbol) {
     };
   }
 
-  if (intent === 'asset') {
-    const board = await spreadBoard(50);
-    const hit = board.ok && board.data.find((a) => (a.symbol || '').toUpperCase() === symbol);
+  if (intent === 'asset' || named) {
+    const hit = named;
     if (!hit) {
       return {
         view: 'one asset',
-        askedAbout: symbol,
-        error: `${symbol} is not among the assets currently on the board`,
-        availableSymbols: board.ok ? board.data.map((a) => a.symbol).slice(0, 40) : [],
+        askedAbout: symbol || question,
+        error: 'no asset on the board matches that, so nothing specific was fetched',
+        availableSymbols: board && board.ok ? board.data.map((a) => a.symbol) : [],
       };
     }
     const detail = await cmc.rwaQuotes([hit.id]);
@@ -344,7 +352,7 @@ app.post('/api/ask', safe(async (req, res) => {
   const symbol = (routed && routed.symbol) || null;
 
   // 2. real data for that view, from the same functions the pages use.
-  const facts = await gatherFacts(intent, symbol);
+  const facts = await gatherFacts(intent, symbol, q);
 
   // 3. prose over those facts and nothing else.
   const ans = await brain.chat({

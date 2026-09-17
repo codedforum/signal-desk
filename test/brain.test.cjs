@@ -69,5 +69,29 @@ ok(rl.take('a', T + 60001).ok,             'the window rolls off');
 ok(rl.take('c', T).remaining === 2,        'a fresh caller is told how many it has left');
 ok(rl.take('c', T).remaining === 1,        'and the count falls with each call');
 
+
+console.log('which asset a question names is decided from the board, not by the model:');
+const BOARD = [
+  { id: 1, symbol: 'GOLD',  name: 'Gold' },
+  { id: 2, symbol: 'TSM',   name: 'Taiwan Semiconductor Manufacturing Co Ltd' },
+  { id: 3, symbol: 'META',  name: 'Meta Platforms, Inc.' },
+  { id: 4, symbol: 'GOOGL', name: 'Alphabet Inc Class A' },
+  { id: 5, symbol: 'SLV',   name: 'iShares Silver Trust' },
+  { id: 6, symbol: 'SPY',   name: 'SPDR S&P 500 ETF Trust' },
+];
+const sym = (q, s) => { const r = b.resolveAsset(q, BOARD, s); return r ? r.symbol : null; };
+ok(sym('where is tokenised gold cheapest') === 'GOLD',   'a plain name the model missed still resolves');
+ok(sym('how wide is TSM right now') === 'TSM',           'a ticker in the text resolves');
+ok(sym('tell me about taiwan semiconductor') === 'TSM',  'a company name resolves');
+ok(sym('is silver dislocated') === 'SLV',                'so does a distinctive name word');
+ok(sym('what about alphabet') === 'GOOGL',               'and one that is not the ticker at all');
+ok(sym('which is most dislocated right now') === null,   'a general question names no asset');
+ok(sym('what is the market doing') === null,             'nor does a market question');
+ok(sym('anything on NVDA', 'NVDA') === null,             'a symbol not on the board resolves to nothing');
+ok(sym('how wide is meta', 'GOLD') === 'GOLD',           'the model\'s symbol is trusted when it is on the board');
+ok(sym('tell me about the trust') === null,              'a word shared by several names matches none of them');
+ok(sym('anything', []) === null,                         'an empty board resolves nothing');
+ok(sym('anything', null) === null,                       'and neither does a missing one');
+
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');
 process.exit(fail ? 1 : 0);
