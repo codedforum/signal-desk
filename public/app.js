@@ -570,6 +570,9 @@ async function loadRwaSpreads() {
         wt.append(el('span', 'tagband tagband-' + a.history.band.replace(/\s+/g, '-'), a.history.band));
       } else if (a.weightedSpreadBps < a.tradableSpreadBps * 0.5) {
         wt.append(el('span', 'sub', 'thin on one side'));
+      } else if (a.sameChain === false && a.cheapest.chain && a.dearest.chain) {
+        // A price difference and a reachable one are different facts.
+        wt.append(el('span', 'sub', 'different venues'));
       }
       tr.append(wt);
 
@@ -581,14 +584,17 @@ async function loadRwaSpreads() {
       top.textContent = a.concentration == null ? 'n/a' : Math.round(a.concentration * 100) + '%';
       top.append(el('span', 'sub', usd(a.liquidVolume) + ' traded'));
       tr.append(top);
-      const c = el('td');
-      c.append(el('span', null, a.cheapest.symbol || '?'));
-      c.append(el('span', 'sub', a.cheapest.issuer || ''));
-      tr.append(c);
-      const d = el('td');
-      d.append(el('span', null, a.dearest.symbol || '?'));
-      d.append(el('span', 'sub', a.dearest.issuer || ''));
-      tr.append(d);
+      const venue = (side) => {
+        const td = el('td');
+        td.append(el('span', null, side.symbol || '?'));
+        const where = side.chain && side.chain !== side.issuer
+          ? `${side.issuer || ''} on ${side.chain}`
+          : (side.issuer || side.chain || '');
+        td.append(el('span', 'sub', where));
+        return td;
+      };
+      tr.append(venue(a.cheapest));
+      tr.append(venue(a.dearest));
 
       tr.className = 'rowopen';
       tr.tabIndex = 0;
@@ -728,7 +734,7 @@ function spreadTable(s) {
   const wrapEl = el('div', 'tablewrap');
   const t = el('table', 'tbl');
   const thead = el('thead'), hr = el('tr');
-  const cols = [['Wrapper', ''], ['Price', 'num'], ['vs cheapest traded', 'num'],
+  const cols = [['Wrapper', ''], ['Chain', ''], ['Price', 'num'], ['vs cheapest traded', 'num'],
                 ['vs reference', 'num'], ['24h volume', 'num']];
   for (const [label, c] of cols) hr.append(el('th', c, label));
   thead.append(hr); t.append(thead);
@@ -741,6 +747,17 @@ function spreadTable(s) {
     left.append(el('span', 'sym', r.symbol || '?'));
     left.append(el('span', 'sub', r.issuer || r.name || ''));
     tr.append(left);
+
+    const chain = el('td');
+    if (r.chain) {
+      chain.append(el('span', 'sub', r.chain));
+      // A closed venue is not a network, and a reader deciding where to buy
+      // needs to know the difference.
+      if (!r.publicChain) chain.append(el('span', 'tagquiet', 'own venue'));
+    } else {
+      chain.append(el('span', 'tagquiet', 'unknown'));
+    }
+    tr.append(chain);
 
     tr.append(el('td', 'num', px(r.price)));
 

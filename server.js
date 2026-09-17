@@ -16,6 +16,7 @@ const { wrapperSpread } = require('./lib/spread');
 const { isServed } = require('./lib/served');
 const history = require('./lib/history');
 const brain = require('./lib/brain');
+const { PlatformMap } = require('./lib/platform');
 const { num, usdQuote, rwaAssetRow, spreadBoard } = require('./lib/board');
 
 const app = express();
@@ -44,8 +45,15 @@ const RECORD_MS = Math.max(Number(process.env.RECORD_MS) || 15 * 60 * 1000, 60 *
 const BRAIN = {
   base: process.env.BRAIN_BASE || '',
   model: process.env.BRAIN_MODEL || 'gpt-oss:120b-cloud',
+  key: process.env.BRAIN_KEY || '',
+  kind: process.env.BRAIN_KIND || '',
   enabled: !!process.env.BRAIN_BASE,
 };
+// Which chain each wrapper lives on. Cached on disk because a token's network
+// does not change, so this costs a handful of calls once and nothing after.
+const platforms = new PlatformMap(
+  process.env.PLATFORM_FILE || path.join(__dirname, 'data', 'platforms.json'));
+
 const askLimiter = new brain.RateLimiter(
   Number(process.env.ASK_PER_MIN) || 8, 60 * 1000);
 
@@ -226,8 +234,33 @@ async function gatherFacts(intent, symbol, question) {
   // gold is how the answer "there is no tokenised gold" gets produced about an
   // asset that is sitting on the board.
   const board = (intent === 'spreads' || intent === 'asset' || intent === 'unknown')
-    ? await spreadBoard(50) : null;
+    ? await spreadBoard(50, platforms) : null;
   const named = board && board.ok ? brain.resolveAsset(question, board.data, symbol) : null;
+
+  // The plainest question there is. The app has had a quote endpoint all along,
+  // but the router had no intent for it, so asking a price got "no price data".
+  if (intent === 'quote') {
+    const want = symbol || (String(question).toUpperCase().match(/\b[A-Z]{2,10}\b/g) || [])
+      .filter((w) => !['WHAT', 'THE', 'IS', 'PRICE', 'CURRENT', 'HOW', 'MUCH', 'OF', 'NOW', 'TODAY'].includes(w))[0];
+    if (!want) return { view: 'quote', error: 'no asset was named, so nothing was looked up' };
+    const r = await cmc.quotes([want]);
+    if (!r.ok) return { view: 'quote', askedAbout: want, error: 'the quote endpoint refused', verdict: r.verdict };
+    const rows = Object.values(r.data || {}).map((c) => {
+      const c0 = Array.isArray(c) ? c[0] : c;
+      const u = (c0 && c0.quote && c0.quote.USD) || {};
+      return {
+        symbol: c0.symbol, name: c0.name, rank: c0.cmc_rank,
+        price: u.price ?? null,
+        change1h: u.percent_change_1h ?? null,
+        change24h: u.percent_change_24h ?? null,
+        change7d: u.percent_change_7d ?? null,
+        volume24h: u.volume_24h ?? null,
+        marketCap: u.market_cap ?? null,
+      };
+    });
+    if (!rows.length) return { view: 'quote', askedAbout: want, error: `CoinMarketCap returned no asset for ${want}` };
+    return { view: 'quote', askedAbout: want, note: 'change figures are percentages over that window', quotes: rows };
+  }
 
   if (intent === 'spreads' && !named) {
     if (!board.ok) return { error: 'the spread board is unavailable', verdict: board.verdict };
@@ -345,8 +378,8 @@ app.post('/api/ask', safe(async (req, res) => {
   // 1. which of our own views answers this. The model picks, the keyword
   //    router decides when the model is unreachable or returns nonsense.
   const cls = await brain.chat({
-    base: BRAIN.base, model: BRAIN.model, system: brain.CLASSIFY_SYSTEM,
-    user: q, timeoutMs: 12000, temperature: 0,
+    base: BRAIN.base, model: BRAIN.model, key: BRAIN.key, kind: BRAIN.kind,
+    system: brain.CLASSIFY_SYSTEM, user: q, timeoutMs: 15000, temperature: 0,
   });
   const routed = cls.ok ? brain.parseIntent(cls.content) : null;
   const intent = (routed && routed.intent) || brain.keywordIntent(q);
@@ -362,8 +395,9 @@ app.post('/api/ask', safe(async (req, res) => {
 
   // 3. prose over those facts and nothing else.
   const ans = await brain.chat({
-    base: BRAIN.base, model: BRAIN.model, system: brain.ANSWER_SYSTEM,
-    user: brain.buildAnswerPrompt(q, facts), timeoutMs: 30000, temperature: 0.2,
+    base: BRAIN.base, model: BRAIN.model, key: BRAIN.key, kind: BRAIN.kind,
+    system: brain.ANSWER_SYSTEM, user: brain.buildAnswerPrompt(q, facts),
+    timeoutMs: 40000, temperature: 0.2,
   });
 
   res.json({
@@ -459,7 +493,7 @@ app.get('/api/rwa/asset/:id', safe(async (req, res) => {
 // scale with viewers, only with time.
 app.get('/api/rwa/spreads', safe(async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 2), 50);
-  const board = await spreadBoard(limit);
+  const board = await spreadBoard(limit, platforms);
   if (!board.ok) return res.json(board);
 
   // Each row measured against its own past, which is the question a single
@@ -561,6 +595,38 @@ app.get('/api/rwa/sector/:id', safe(async (req, res) => {
   res.json({ ok: true, name: r.data?.name || '', description: (r.data?.description || '').slice(0, 400), data: coins });
 }));
 
+// The chain lookup needs the crypto ids, which only the quotes payload carries,
+// so it runs off a cheap board build and then fills whatever is missing. Guarded
+// so two callers cannot fetch the same ids at once.
+let filling = null;
+async function fillPlatforms() {
+  if (filling) return filling;
+  filling = (async () => {
+    try {
+      // Both of these are the calls the board already makes, so they come from
+      // the cache and the crypto ids cost nothing to collect.
+      const list = await cmc.rwaAssets({ limit: 50 });
+      if (!list.ok) return { fetched: 0, calls: 0, dropped: [] };
+      const ids = cmc.rwaRows(list.data, 'rwa_assets').map((r) => r.rwa_id ?? r.id).filter(Boolean);
+      const q = await cmc.rwaQuotes(ids);
+      if (!q.ok) return { fetched: 0, calls: 0, dropped: [] };
+      const cryptoIds = cmc.rwaRows(q.data, 'rwa_assets')
+        .flatMap((a) => (a.tokens || []).map((t) => t.crypto_id))
+        .filter(Boolean);
+      const r = await platforms.fill(cmc, cryptoIds);
+      if (r.fetched || r.dropped.length) {
+        console.log(`[cmc-signal] chains: ${r.fetched} resolved in ${r.calls} calls`
+          + (r.dropped.length ? `, ${r.dropped.length} ids the API rejected` : ''));
+      }
+      return r;
+    } catch (e) {
+      console.log(`[cmc-signal] chain lookup failed: ${e.message}`);
+      return { fetched: 0, calls: 0, dropped: [] };
+    } finally { filling = null; }
+  })();
+  return filling;
+}
+
 // Write down what the board looked like, because this reading is the only
 // chance to record it. A failure here is logged and dropped: the recorder
 // exists to make the product better later and must never be able to take the
@@ -570,7 +636,10 @@ async function recordSnapshot(reason) {
   if (recording) return;
   recording = true;
   try {
-    const board = await spreadBoard(50);
+    // Resolve any wrapper chain not already known. Steady state this fetches
+    // nothing, because a token's network does not change.
+    await fillPlatforms();
+    const board = await spreadBoard(50, platforms);
     if (!board.ok || !board.data.length) {
       console.log(`[cmc-signal] snapshot skipped (${reason}): ${board.verdict || 'no rows'}`);
       return;
@@ -596,7 +665,9 @@ app.listen(PORT, () => {
   }
   // A short delay so a restart does not fire a snapshot before the process has
   // settled, and unref so the timer never holds the process open by itself.
-  setTimeout(() => recordSnapshot('boot'), 20 * 1000).unref();
+  // Chains first, so the very first snapshot and the first page load already
+  // know which network each wrapper is on.
+  setTimeout(() => { fillPlatforms().then(() => recordSnapshot('boot')); }, 20 * 1000).unref();
   setInterval(() => recordSnapshot('timer'), RECORD_MS).unref();
   // Once a day, drop whatever has aged out of the window.
   setInterval(() => {

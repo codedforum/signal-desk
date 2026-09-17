@@ -7,6 +7,15 @@ const ok = (c, m) => { if (!c) { console.log('  FAIL ' + m); fail++; } else cons
 
 console.log('the keyword router covers each intent without a model:');
 ok(b.keywordIntent('which asset has the widest spread') === 'spreads', 'spread wording routes to spreads');
+ok(b.keywordIntent('what is current near price') === 'quote',         'asking a price routes to quote');
+ok(b.keywordIntent('how much is bitcoin') === 'quote',                'and so does asking how much');
+ok(b.keywordIntent('market cap of solana') === 'quote',               'and asking a market cap');
+// A stem with a trailing word boundary can never match its own inflections,
+// which silently broke the fallback for the commonest word on the board.
+ok(b.keywordIntent('which is most dislocated') === 'spreads',         'an inflected stem still routes');
+ok(b.keywordIntent('show me the dislocation') === 'spreads',          'and so does the noun form');
+ok(b.keywordIntent('is tokenised gold cheap') === 'asset',            'tokenised routes to an asset');
+ok(b.keywordIntent('where is tokenised gold cheapest') === 'spreads', 'unless it asks about venues');
 ok(b.keywordIntent('where is tokenised NVDA cheapest') === 'spreads', 'so does cheapest');
 ok(b.keywordIntent('what is the market doing') === 'regime',          'market wording routes to regime');
 ok(b.keywordIntent('how is breadth looking') === 'regime',            'so does breadth');
@@ -120,6 +129,38 @@ ok(t.nested[0].tradableSpreadBps === 12.3, 'rounding reaches inside arrays');
 ok(t.nested[0].price === 1.2346,          'and inside nested objects');
 ok(b.tidy(Infinity) === Infinity,         'a non finite number is left alone rather than mangled');
 ok(b.tidy('x') === 'x',                   'a bare string survives');
+
+
+console.log('the wire shape is inferred, or stated when it must be:');
+ok(b.wireShape({ base: 'https://api.x.ai/v1', key: 'k' }) === 'openai', 'a key means openai compatible');
+ok(b.wireShape({ base: 'https://api.x.ai/v1' }) === 'openai',           'so does a base ending in v1');
+ok(b.wireShape({ base: 'https://api.x.ai/v1/' }) === 'openai',          'even with a trailing slash');
+ok(b.wireShape({ base: 'http://127.0.0.1:11434' }) === 'ollama',        'a bare host is ollama');
+ok(b.wireShape({ base: 'https://api.x.ai/v1', kind: 'ollama' }) === 'ollama', 'an explicit kind overrides both');
+ok(b.wireShape({ base: '' }) === 'ollama',                              'and an empty base does not throw');
+
+console.log('each shape builds the request its server expects:');
+const oa = b.buildRequest({ base: 'https://api.s.ai/v1', key: 'secret', model: 'gpt-5.4', system: 'S', user: 'U' });
+ok(oa.url === 'https://api.s.ai/v1/chat/completions',  'openai posts to chat/completions');
+ok(oa.headers.authorization === 'Bearer secret',       'and carries bearer auth');
+ok(oa.body.messages.length === 2,                      'with system and user messages');
+ok(oa.body.stream === undefined,                       'and no ollama only fields');
+const ol = b.buildRequest({ base: 'http://127.0.0.1:11434', model: 'm', system: 'S', user: 'U' });
+ok(ol.url === 'http://127.0.0.1:11434/api/chat',       'ollama posts to api/chat');
+ok(ol.body.stream === false,                           'with streaming off');
+ok(ol.headers.authorization === undefined,             'and no auth header when there is no key');
+ok(b.buildRequest({ base: 'https://a/v1/', key: 'k', model: 'm' }).url === 'https://a/v1/chat/completions',
+                                                       'a trailing slash does not double up');
+
+console.log('the reply is read from wherever that shape puts it:');
+ok(b.readReply('openai', { choices: [{ message: { content: 'hi' } }] }).content === 'hi', 'openai reply parses');
+ok(b.readReply('ollama', { message: { content: 'hi' } }).content === 'hi',                'ollama reply parses');
+ok(b.readReply('openai', { error: { message: 'no credit' } }).msg === 'no credit',        'an error object is surfaced');
+ok(b.readReply('openai', { error: 'plain string' }).msg === 'plain string',               'and so is an error string');
+ok(b.readReply('openai', { choices: [] }).ok === false,                                   'no choices is a failure');
+ok(b.readReply('openai', { choices: [{ message: { content: '   ' } }] }).ok === false,     'whitespace is not an answer');
+ok(b.readReply('ollama', null).ok === false,                                              'a null body is a failure');
+ok(b.readReply('openai', {}).msg === 'model returned nothing',                            'and says so plainly');
 
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');
 process.exit(fail ? 1 : 0);
