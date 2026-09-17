@@ -245,8 +245,14 @@ async function runTool(name, args = {}) {
           const r = ranked.get(key(t));
           return {
             ...t,
-            bpsFromCheapest: r ? round1(r.bpsFromCheapest) : null,
+            bpsFromBaseline: r ? round1(r.bpsFromBaseline) : null,
             premiumPct: r ? round2(r.premiumPct) : null,
+            // Absent from the ranking means one of two things, and they are
+            // not the same: no live quote, or a quote on another unit.
+            rankable: r ? true : false,
+            // Three states, not two. Liquid is tradable, thin is traded by
+            // almost nobody, and neither of the last two is evidence of a price.
+            liquidity: r ? (r.liquid ? 'liquid' : (r.thin ? 'thin' : 'none')) : null,
           };
         }),
         spread: spread && {
@@ -256,13 +262,24 @@ async function runTool(name, args = {}) {
           spreadBps: round1(spread.spreadBps),
           cheapest: brief(spread.cheapest),
           dearest: brief(spread.dearest),
+          // Everything is measured from here, and it is the cheapest wrapper
+          // that trades rather than the cheapest quote.
+          baseline: brief(spread.baseline),
+          // Same asset, different unit, so these are named and never ranked.
+          offScale: spread.offScale.map((t) => ({
+            ...brief(t), ratioToAnchor: round2(t.ratioToAnchor),
+          })),
           // Only these two can actually be traded against each other, so a
           // recommendation should quote this pair and not the one above.
           tradableSpreadBps: spread.tradableSpreadBps == null ? null : round1(spread.tradableSpreadBps),
           tradableCheapest: brief(spread.tradableCheapest),
           tradableDearest: brief(spread.tradableDearest),
           caveat: 'Wrappers differ by chain, custody and redemption terms, so a gap is a venue '
-            + 'cost rather than an arbitrage. Say so when quoting one.',
+            + 'cost rather than an arbitrage. Say so when quoting one. A wrapper with no volume '
+            + 'is a published price, not an available one, and anything in offScale quotes a '
+            + 'different unit of the asset and must never be called cheap. Quote tradableSpreadBps, '
+            + 'never spreadBps, when a user asks how dislocated an asset is: the second includes '
+            + 'venues under the liquidity floor whose prices drift and stay drifted.',
         },
       };
     }

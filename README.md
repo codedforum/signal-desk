@@ -33,7 +33,7 @@ npm test                  # probe rules and spread maths, no key and no network 
 | **Markets and Trading Tools** | Screener with local filtering, watchlist, portfolio with live PnL, price alerts evaluated client side |
 | **AI Agents and Automation** | `mcp/server.js`, an MCP server exposing six tools over stdio to any LLM client |
 | **Data and Visualisation** | Regime read, sentiment gauge, breadth bar, interactive 3D sector rotation, chain explorer |
-| **Real World Assets** | The v5 RWA family: tokenised asset universe, per-asset registrant metadata including SEC CIK, the tokens representing each asset with their issuers, the price dispersion between those tokens in basis points, and an issuer explorer |
+| **Real World Assets** | The v5 RWA family: tokenised asset universe, per-asset registrant metadata including SEC CIK, the tokens representing each asset with their issuers, a dislocation leaderboard ranking the whole universe by how far apart its wrappers trade, and an issuer explorer |
 
 Submitted under one track, but the product covers all four.
 
@@ -129,12 +129,21 @@ taxonomy reaches that, because a category has no concept of an issuer.
 **Nobody makes those issuers agree on a price, and the gap is free to compute.**
 Because `quotes/latest` returns every wrapper in one payload, the dispersion between
 them is arithmetic on a response already in hand rather than a second request. Circle
-trades across seven tokenised versions spanning 43 basis points, cheapest at Reality
-and dearest at Robinhood, which on a $10,000 position is $43 of pure venue choice.
-`lib/spread.js` does that in about sixty lines and costs no credits, so the RWA view
-and the MCP tool both report it. Volume is what separates a price you can trade on
-from one that is only published, so a wrapper with none is shown and then excluded
-from any pair the product actually names.
+trades across seven tokenised versions spanning tens of basis points, and on a $10,000
+position that is real money for choosing the wrong venue. `lib/spread.js` does it in
+about a hundred lines, costs no credits, and feeds both the RWA view and the MCP tool.
+
+**And `quotes/latest` takes fifty ids at once, so the whole board is two calls.**
+The Spreads tab ranks the entire tokenised universe by how far apart its versions are:
+one call for the asset list, one batched quote for every wrapper of every asset, both
+cached for fifteen minutes. The cost does not scale with viewers, only with time. That
+one endpoint turns a per-asset curiosity into a market-wide view of where tokenisation
+is actually dislocated.
+
+**Two things had to be right before that ranking meant anything**, and both were found
+by looking at what the numbers claimed rather than trusting them. They are written up
+under "Where it got in the way" as feedback items 8 and 9, because both are properties
+of the data rather than bugs in this code.
 
 **Categories are underrated.** `/v1/cryptocurrency/categories` gives a sector taxonomy
 with market cap and change already computed, so rotation needs one call rather than a
@@ -220,6 +229,26 @@ means nothing. `.modal .grab{display:block}` and `@media (min-width:760px){.moda
 .grab{display:none}}` carry identical specificity, so the later one wins and mine was
 later. Caught by asserting the computed style in Chrome rather than reading the CSS.
 Declaration order is the fix, not `!important`.
+
+**8. One asset's wrappers do not all quote the same unit, and nothing in the payload
+says so.** Gold returns seven tokens. Five are one troy ounce at about $4,320 and two
+are one gram at about $138. Ranked naively that is a spread of 305,274 basis points,
+and the product stated it as a fact until the number was checked against reality. There
+is no field distinguishing them: `price` is just a number, and the unit lives in the
+token's name if anywhere. The fix is to anchor on the asset level `average_tokenized_price`,
+which is reliably in the majority denomination, and set aside any wrapper more than 25%
+away rather than ranking it. A per-token `unit` or `denomination` field would remove the
+guesswork entirely, and gold, silver and oil all need it.
+
+**9. Nonzero volume is not the same as tradable, and the difference inverts conclusions.**
+Google's cheapest wrapper carried $43 of 24h volume and another carried $9, both quoting
+hundreds of basis points away from the six venues doing millions. Treating any volume at
+all as a tradable price put those two at opposite ends of the dislocation ranking and
+called it a finding, when the real cluster spans 45 basis points. A price nobody trades
+drifts and then stays drifted, so it is evidence of neglect rather than of a dislocation.
+The floor here is $10,000 of 24h volume, stated in `lib/spread.js` and exported so callers
+can cite it. This is the single most important thing to get right when comparing venues,
+and it is entirely invisible if you sort on price alone.
 
 ## Mobile first
 

@@ -493,6 +493,8 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
   border-radius:5px;padding:2px 6px;line-height:1.4}
 .tagquiet{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
   color:var(--ink-3)}
+/* Quoted below every venue that trades, which reads as stale rather than cheap. */
+.tbl td.stale{color:var(--ink-3)}
 /* The table is the widest thing in the modal, so it scrolls inside its own box
    rather than pushing the dialog sideways on a phone. */
 .modal-body .tablewrap{margin-bottom:4px}

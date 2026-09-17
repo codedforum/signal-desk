@@ -511,7 +511,7 @@ let rwaLoaded = false;
 let rwaTypeSel = '';
 
 function rwaTab(name) {
-  for (const t of ['assets', 'issuers', 'sectors']) {
+  for (const t of ['assets', 'spreads', 'issuers', 'sectors']) {
     $('#rwatab-' + t).hidden = t !== name;
   }
   $$('[data-rwatab]').forEach((b) => {
@@ -519,8 +519,78 @@ function rwaTab(name) {
     b.classList.toggle('on', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
+  if (name === 'spreads') loadRwaSpreads();
   if (name === 'issuers') loadIssuers();
   if (name === 'sectors') loadRwaSectors();
+}
+
+let rwaSpreadsLoaded = false;
+async function loadRwaSpreads() {
+  if (rwaSpreadsLoaded) return; rwaSpreadsLoaded = true;
+  const tb = $('#rwa-spreads-table tbody');
+  const head = $('#rwa-spread-head');
+  const note = $('#rwa-spreads-note');
+  tb.innerHTML = '<tr><td colspan="6" class="skel">reading every wrapper in the universe</td></tr>';
+  try {
+    const r = await fetch('api/rwa/spreads?limit=50').then((x) => x.json());
+    tb.textContent = '';
+    if (!r.ok || !r.data?.length) {
+      tb.innerHTML = '<tr><td colspan="6" class="skel">'
+        + (r.ok ? 'no asset currently has two wrappers trading at once' : 'the plan refused this data')
+        + '</td></tr>';
+      return;
+    }
+    const widest = r.data[0];
+    head.textContent = '';
+    const box = el('div', 'spreadhead');
+    const big = el('div', 'spreadbig');
+    big.append(el('strong', null, bpsTxt(widest.tradableSpreadBps)));
+    big.append(el('span', 'mk', 'widest right now, ' + (widest.symbol || '')));
+    box.append(big);
+    box.append(el('p', 'spreadsay',
+      `${widest.name || widest.symbol} is the most dislocated asset on the board. `
+      + `${wrapName(widest.cheapest)} at ${px(widest.cheapest.price)} against `
+      + `${wrapName(widest.dearest)} at ${px(widest.dearest.price)}.`));
+    head.append(box);
+
+    for (const a of r.data) {
+      const tr = el('tr');
+      const first = el('td');
+      first.append(el('span', 'sym', a.symbol || '?'));
+      first.append(el('span', 'sub', (a.name || '').slice(0, 34)));
+      tr.append(first);
+      tr.append(el('td', null, (a.type || '').replace(/_/g, ' ')));
+      const w = el('td', 'num');
+      w.textContent = String(a.tradable);
+      if (a.offScale) w.append(el('span', 'sub', a.offScale + ' on another unit'));
+      tr.append(w);
+      tr.append(el('td', 'num', bpsTxt(a.tradableSpreadBps)));
+      const c = el('td');
+      c.append(el('span', null, a.cheapest.symbol || '?'));
+      c.append(el('span', 'sub', a.cheapest.issuer || ''));
+      tr.append(c);
+      const d = el('td');
+      d.append(el('span', null, a.dearest.symbol || '?'));
+      d.append(el('span', 'sub', a.dearest.issuer || ''));
+      tr.append(d);
+
+      tr.className = 'rowopen';
+      tr.tabIndex = 0;
+      const open = () => openRwaAsset(a.id, a.symbol, a.name);
+      tr.onclick = open;
+      tr.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+      tb.append(tr);
+    }
+    note.textContent = `${r.ranked} of ${r.scanned} assets have two or more wrappers trading at once. `
+      + (r.offScaleTotal
+        ? `${r.offScaleTotal} wrappers were set aside for quoting a different unit of their asset, `
+          + 'such as a gram of gold against a troy ounce. '
+        : '')
+      + 'Venues carrying under $10,000 of 24h volume are left out of the ranking, because a price '
+      + 'nobody trades drifts and stays drifted. Two API calls built this whole table.';
+  } catch {
+    tb.innerHTML = '<tr><td colspan="6" class="skel">offline</td></tr>';
+  }
 }
 
 async function loadRwa() {
@@ -594,8 +664,11 @@ async function loadRwaAssets(type) {
 // smaller than the two the rest of the app rounds to.
 const px = (n) => (n == null || !isFinite(n)) ? 'n/a'
   : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-const bpsTxt = (n) => (n == null || !isFinite(n)) ? 'n/a'
-  : (Math.abs(n) < 10 ? n.toFixed(1) : String(Math.round(n))) + ' bps';
+const bpsTxt = (n, signed) => {
+  if (n == null || !isFinite(n)) return 'n/a';
+  const body = (Math.abs(n) < 10 ? n.toFixed(1) : String(Math.round(n)));
+  return (signed && n > 0 ? '+' : '') + body + ' bps';
+};
 const wrapName = (t) => t.issuer ? `${t.symbol || '?'} by ${t.issuer}` : (t.symbol || t.name || 'a wrapper');
 
 // A position size only used to turn a rate into a number a reader can feel.
@@ -621,7 +694,7 @@ function spreadTable(s) {
   const wrapEl = el('div', 'tablewrap');
   const t = el('table', 'tbl');
   const thead = el('thead'), hr = el('tr');
-  const cols = [['Wrapper', ''], ['Price', 'num'], ['vs cheapest', 'num'],
+  const cols = [['Wrapper', ''], ['Price', 'num'], ['vs cheapest traded', 'num'],
                 ['vs reference', 'num'], ['24h volume', 'num']];
   for (const [label, c] of cols) hr.append(el('th', c, label));
   thead.append(hr); t.append(thead);
@@ -638,8 +711,14 @@ function spreadTable(s) {
     tr.append(el('td', 'num', px(r.price)));
 
     const vs = el('td', 'num');
-    if (i === 0) vs.append(el('span', 'tagcheap', s.count === 1 ? 'only version' : 'cheapest'));
-    else vs.textContent = bpsTxt(r.bpsFromCheapest);
+    if (r.isBaseline) {
+      vs.append(el('span', 'tagcheap', s.count === 1 ? 'only version' : 'cheapest traded'));
+    } else {
+      vs.textContent = bpsTxt(r.bpsFromBaseline, true);
+      // A wrapper quoted under the cheapest venue that actually trades is
+      // showing a price nobody can take, so it is not styled as a bargain.
+      if (r.bpsFromBaseline < 0) vs.classList.add('stale');
+    }
     tr.append(vs);
 
     // Deliberately not coloured like a gain or a loss. A wrapper below the
@@ -650,8 +729,16 @@ function spreadTable(s) {
     tr.append(prem);
 
     const vol = el('td', 'num');
-    if (r.liquid) vol.textContent = usd(r.volume24h);
-    else { vol.append(el('span', 'tagquiet', 'no volume')); }
+    if (r.liquid) {
+      vol.textContent = usd(r.volume24h);
+    } else if (r.thin) {
+      // Traded, but by too few people for the price to mean much, so it shows
+      // the figure that makes the point rather than hiding behind a label.
+      vol.textContent = usd(r.volume24h);
+      vol.append(el('span', 'tagquiet', 'too thin to rank'));
+    } else {
+      vol.append(el('span', 'tagquiet', 'no volume'));
+    }
     tr.append(vol);
 
     // The issuer explorer is the other half of this data, so a row is a door
@@ -719,6 +806,14 @@ async function openRwaAsset(id, symbol, name) {
       wrap.append(el('h4', 'msub', heading));
       if (s.tradableSpreadBps != null) wrap.append(spreadHeadline(s));
       wrap.append(spreadTable(s));
+      if (s.offScale?.length) {
+        const names = s.offScale.map((t) =>
+          `${t.symbol || '?'}${t.issuer ? ' by ' + t.issuer : ''} at ${px(t.price)}`).join(', ');
+        wrap.append(el('p', 'hint',
+          `${s.offScale.length} further ${s.offScale.length === 1 ? 'wrapper quotes' : 'wrappers quote'} `
+          + 'a different unit of this asset, so ranking them beside the rest would be meaningless: '
+          + names + '. Gold is the usual reason, where one token is a gram and another a troy ounce.'));
+      }
       if (s.unpriced > 0) {
         wrap.append(el('p', 'hint',
           `${s.unpriced} further ${s.unpriced === 1 ? 'token is' : 'tokens are'} indexed for this asset `
@@ -729,7 +824,9 @@ async function openRwaAsset(id, symbol, name) {
           + 'The price above is derived from the quote already fetched, at no extra request.'
         : 'Wrappers differ by chain, custody and redemption terms, so a gap is not free money. '
           + 'It is what choosing one version over another costs on the same underlying. '
-          + 'Each figure is derived from the quote already fetched for this asset, at no extra request.'));
+          + 'The headline compares only venues carrying real volume, because a price nobody is '
+          + 'trading can sit far from the rest and stay there. Each figure is derived from the '
+          + 'quote already fetched for this asset, at no extra request.'));
     } else if (r.tokens?.length) {
       // Indexed, but none of them quoted. Still worth naming who minted what.
       wrap.append(el('h4', 'msub', `Tokens representing this asset (${r.tokens.length})`));

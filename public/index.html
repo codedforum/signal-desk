@@ -194,6 +194,7 @@
 
     <div class="segbar" role="tablist" aria-label="RWA sections">
       <button class="seg on" role="tab" aria-selected="true"  data-rwatab="assets">Assets</button>
+      <button class="seg"    role="tab" aria-selected="false" data-rwatab="spreads">Spreads</button>
       <button class="seg"    role="tab" aria-selected="false" data-rwatab="issuers">Issuers</button>
       <button class="seg"    role="tab" aria-selected="false" data-rwatab="sectors">Sectors</button>
       <span class="segglide" aria-hidden="true"></span>
@@ -207,6 +208,20 @@
         <tbody></tbody>
       </table></div>
       <p class="hint" id="rwa-assets-note"></p>
+    </div>
+
+    <!-- SPREADS -->
+    <div class="rwatab" id="rwatab-spreads" hidden>
+      <p class="hint">The same asset is tokenised by issuers who never agree a price with each other. This ranks the universe by how far apart those versions are, measured between the cheapest and the dearest wrapper that actually trades. Every figure comes from one batched quote, so the whole board costs two API calls however many people read it.</p>
+      <div id="rwa-spread-head"></div>
+      <div class="tablewrap"><table class="tbl" id="rwa-spreads-table">
+        <thead><tr>
+          <th>Asset</th><th>Type</th><th class="num">Wrappers</th>
+          <th class="num">Spread</th><th>Cheapest</th><th>Dearest</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <p class="hint" id="rwa-spreads-note"></p>
     </div>
 
     <!-- ISSUERS -->
