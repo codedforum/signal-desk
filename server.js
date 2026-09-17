@@ -317,11 +317,18 @@ app.get('/api/rwa/spreads', safe(async (req, res) => {
       offScale: s.offScale.length,
       spreadBps: s.spreadBps,
       tradableSpreadBps: s.tradableSpreadBps,
-      cheapest: { symbol: s.tradableCheapest.symbol, issuer: s.tradableCheapest.issuer, price: s.tradableCheapest.price },
-      dearest: { symbol: s.tradableDearest.symbol, issuer: s.tradableDearest.issuer, price: s.tradableDearest.price },
+      // The figure the board is ordered by. A wide gap between two venues that
+      // between them hold a rounding error of the volume is a small fact, and
+      // this is what says so.
+      weightedSpreadBps: s.weightedSpreadBps,
+      vwap: s.vwap,
+      liquidVolume: s.liquidVolume,
+      concentration: s.concentration,
+      cheapest: { symbol: s.tradableCheapest.symbol, issuer: s.tradableCheapest.issuer, price: s.tradableCheapest.price, volumeShare: s.tradableCheapest.volumeShare },
+      dearest: { symbol: s.tradableDearest.symbol, issuer: s.tradableDearest.issuer, price: s.tradableDearest.price, volumeShare: s.tradableDearest.volumeShare },
     });
   }
-  rows.sort((a, b) => b.tradableSpreadBps - a.tradableSpreadBps);
+  rows.sort((a, b) => b.weightedSpreadBps - a.weightedSpreadBps);
 
   res.json({
     ok: true,

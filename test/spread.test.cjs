@@ -1,7 +1,7 @@
 // Regression test for the wrapper spread. Pure arithmetic over a quotes payload,
 // so no network and no key. The fixture is the live CRCL response, which is the
 // case the numbers were first checked by hand against.
-const { wrapperSpread, LIQUID_MIN } = require('../lib/spread.js');
+const { wrapperSpread, LIQUID_MIN, TAIL } = require('../lib/spread.js');
 let fail = 0;
 const ok = (c, m) => { if (!c) { console.log('  FAIL ' + m); fail++; } else console.log('  ok   ' + m); };
 const near = (a, b, tol = 0.05) => typeof a === 'number' && Math.abs(a - b) < tol;
@@ -157,6 +157,73 @@ const atFloor = wrapperSpread([
 ok(atFloor.rows[0].liquid === true,             'a wrapper exactly at the floor is liquid');
 ok(atFloor.rows[1].liquid === false,            'one dollar under it is not');
 ok(atFloor.tradableSpreadBps === null,          'and one liquid venue alone yields no tradable spread');
+
+
+console.log('a gap between two venues nobody uses is a small fact:');
+// The live SGOV case. 183 bps between two venues, one of which holds 1.7% of
+// the traded volume, so almost everything changes hands at a single price.
+const SGOV = [
+  { symbol: 'SGOV',   issuer: 'Robinhood',   price: 100.00, volume24h: 666629 },
+  { symbol: 'SGOVon', issuer: 'Ondo Assets', price: 101.83, volume24h: 11604 },
+];
+const sg = wrapperSpread(SGOV, 100.5);
+ok(near(sg.tradableSpreadBps, 183, 1),          'the raw spread still reports 183 bps');
+ok(sg.weightedSpreadBps === 0,                  'the weighted spread reads zero');
+ok(sg.concentration > 0.98,                     'because one venue holds over 98% of the volume');
+ok(sg.vwap < 100.05,                            'and the volume weighted price sits on that venue');
+
+console.log('a gap both sides actually trade keeps its full size:');
+const split = wrapperSpread([
+  { symbol: 'A', issuer: 'One', price: 100, volume24h: 5000000 },
+  { symbol: 'B', issuer: 'Two', price: 101, volume24h: 5000000 },
+], 100.5);
+ok(near(split.weightedSpreadBps, 100, 1),       'an even split keeps the whole 100 bps');
+ok(near(split.tradableSpreadBps, 100, 1),       'matching the raw figure');
+ok(near(split.concentration, 0.5, 0.01),        'with neither venue dominant');
+ok(near(split.vwap, 100.5, 0.01),               'and the vwap landing between them');
+
+console.log('the weighted price follows the money, not the count:');
+const lopsided = wrapperSpread([
+  { symbol: 'DEEP', issuer: 'Deep', price: 100, volume24h: 99000000 },
+  { symbol: 'T1',   issuer: 'Thin', price: 110, volume24h: 500000 },
+  { symbol: 'T2',   issuer: 'Thin', price: 111, volume24h: 500000 },
+], 100);
+ok(lopsided.vwap < 100.2,                       'two thin venues barely move the vwap');
+ok(lopsided.rows.find((r) => r.symbol === 'DEEP').volumeShare > 0.98,
+                                                'the deep venue holds almost all the share');
+ok(lopsided.weightedSpreadBps === 0,            'and the weighted spread ignores the pair above it');
+ok(lopsided.tradableSpreadBps > 1000,           'though the raw spread still shows the 1100 bps');
+
+console.log('the weighted figures are consistent with each other:');
+const shares = split.rows.filter((r) => r.liquid).reduce((s, r) => s + r.volumeShare, 0);
+ok(near(shares, 1, 1e-9),                       'liquid volume shares sum to one');
+ok(split.rows.every((r) => r.liquid || r.volumeShare === 0),
+                                                'an illiquid wrapper carries no share at all');
+ok(near(split.liquidVolume, 10000000, 1),       'liquid volume totals only the liquid venues');
+ok(split.rows[0].bpsFromVwap < 0 && split.rows[1].bpsFromVwap > 0,
+                                                'wrappers sit either side of the vwap');
+ok(TAIL > 0 && TAIL < 0.5,                      'the tail fraction is a stated, sane number');
+
+console.log('one venue cannot be weighted against itself:');
+const alone = wrapperSpread([
+  { symbol: 'A', price: 100, volume24h: 5000000 },
+  { symbol: 'B', price: 101, volume24h: 3 },
+], 100);
+ok(alone.weightedSpreadBps === null,            'a single liquid venue yields no weighted spread');
+ok(alone.concentration === 1,                   'and reads as fully concentrated');
+ok(alone.vwap != null,                          'while the vwap is still defined');
+
+console.log('no liquid venue at all leaves the weighted figures empty, not zero:');
+const dust = wrapperSpread([
+  { symbol: 'A', price: 100, volume24h: 2 },
+  { symbol: 'B', price: 101, volume24h: 3 },
+], 100);
+ok(dust.liquidVolume === 0,                     'no liquid volume');
+ok(dust.vwap === null,                          'no volume weighted price to state');
+ok(dust.weightedSpreadBps === null,             'and no weighted spread');
+ok(dust.concentration === null,                 'concentration is unknown rather than zero');
+ok(dust.rows.every((r) => r.bpsFromVwap === null), 'every row reports null against it');
+ok(dust.spreadBps > 0,                          'but the raw spread is still reported');
 
 console.log('the input is never mutated:');
 const before = JSON.stringify(CRCL);

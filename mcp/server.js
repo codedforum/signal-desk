@@ -104,7 +104,8 @@ const TOOLS = [
       'and every on-chain token representing it with the issuer that minted each one. Issuers do not coordinate, so the ' +
       'same asset carries a different price on each wrapper, and this returns that dispersion ranked in basis points. ' +
       'Use this to answer "who issues tokenised NVDA", "what company is behind this token", "which version of tokenised ' +
-      'gold is largest", "where is tokenised CRCL cheapest right now", "how far apart are the wrappers on this asset".',
+      'gold is largest", "where is tokenised CRCL cheapest right now", "how far apart are the wrappers on this asset", '
+      + '"is that gap real or is it one dead venue".',
     inputSchema: {
       type: 'object',
       properties: { rwa_id: { type: 'number', description: 'The rwa_id from rwa_assets.' } },
@@ -253,6 +254,8 @@ async function runTool(name, args = {}) {
             // Three states, not two. Liquid is tradable, thin is traded by
             // almost nobody, and neither of the last two is evidence of a price.
             liquidity: r ? (r.liquid ? 'liquid' : (r.thin ? 'thin' : 'none')) : null,
+            volumeShare: r ? round2(r.volumeShare) : null,
+            bpsFromVwap: r ? round1(r.bpsFromVwap) : null,
           };
         }),
         spread: spread && {
@@ -272,6 +275,13 @@ async function runTool(name, args = {}) {
           // Only these two can actually be traded against each other, so a
           // recommendation should quote this pair and not the one above.
           tradableSpreadBps: spread.tradableSpreadBps == null ? null : round1(spread.tradableSpreadBps),
+          // Weighted by where the trading happens. When this is far below
+          // tradableSpreadBps the gap sits on a venue almost nobody uses, and
+          // quoting the raw number alone would overstate it.
+          weightedSpreadBps: spread.weightedSpreadBps == null ? null : round1(spread.weightedSpreadBps),
+          vwap: spread.vwap,
+          liquidVolume: spread.liquidVolume,
+          concentration: spread.concentration == null ? null : round2(spread.concentration),
           tradableCheapest: brief(spread.tradableCheapest),
           tradableDearest: brief(spread.tradableDearest),
           caveat: 'Wrappers differ by chain, custody and redemption terms, so a gap is a venue '
@@ -279,7 +289,10 @@ async function runTool(name, args = {}) {
             + 'is a published price, not an available one, and anything in offScale quotes a '
             + 'different unit of the asset and must never be called cheap. Quote tradableSpreadBps, '
             + 'never spreadBps, when a user asks how dislocated an asset is: the second includes '
-            + 'venues under the liquidity floor whose prices drift and stay drifted.',
+            + 'venues under the liquidity floor whose prices drift and stay drifted. When '
+            + 'weightedSpreadBps is much smaller than tradableSpreadBps, most of the volume sits '
+            + 'on one side and the outright gap overstates the disagreement, so quote both and '
+            + 'say which venue is thin.',
         },
       };
     }

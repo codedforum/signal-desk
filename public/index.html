@@ -212,12 +212,12 @@
 
     <!-- SPREADS -->
     <div class="rwatab" id="rwatab-spreads" hidden>
-      <p class="hint">The same asset is tokenised by issuers who never agree a price with each other. This ranks the universe by how far apart those versions are, measured between the cheapest and the dearest wrapper that actually trades. Every figure comes from one batched quote, so the whole board costs two API calls however many people read it.</p>
+      <p class="hint">The same asset is tokenised by issuers who never agree a price with each other. This ranks the universe by how far apart those versions are, weighted by where the trading actually happens: a wide gap between two venues nobody uses is a small fact, and the weighted column is what says so. Every figure comes from one batched quote, so the whole board costs two API calls however many people read it.</p>
       <div id="rwa-spread-head"></div>
       <div class="tablewrap"><table class="tbl" id="rwa-spreads-table">
         <thead><tr>
-          <th>Asset</th><th>Type</th><th class="num">Wrappers</th>
-          <th class="num">Spread</th><th>Cheapest</th><th>Dearest</th>
+          <th>Asset</th><th class="num">Weighted</th><th class="num">Raw</th>
+          <th class="num">Top venue</th><th>Cheapest</th><th>Dearest</th>
         </tr></thead>
         <tbody></tbody>
       </table></div>

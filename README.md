@@ -33,7 +33,7 @@ npm test                  # probe rules and spread maths, no key and no network 
 | **Markets and Trading Tools** | Screener with local filtering, watchlist, portfolio with live PnL, price alerts evaluated client side |
 | **AI Agents and Automation** | `mcp/server.js`, an MCP server exposing six tools over stdio to any LLM client |
 | **Data and Visualisation** | Regime read, sentiment gauge, breadth bar, interactive 3D sector rotation, chain explorer |
-| **Real World Assets** | The v5 RWA family: tokenised asset universe, per-asset registrant metadata including SEC CIK, the tokens representing each asset with their issuers, a dislocation leaderboard ranking the whole universe by how far apart its wrappers trade, and an issuer explorer |
+| **Real World Assets** | The v5 RWA family: tokenised asset universe, per-asset registrant metadata including SEC CIK, the tokens representing each asset with their issuers, a dislocation leaderboard ranking the whole universe by how far apart its wrappers trade once weighted by where the volume is, and an issuer explorer |
 
 Submitted under one track, but the product covers all four.
 
@@ -140,10 +140,21 @@ cached for fifteen minutes. The cost does not scale with viewers, only with time
 one endpoint turns a per-asset curiosity into a market-wide view of where tokenisation
 is actually dislocated.
 
-**Two things had to be right before that ranking meant anything**, and both were found
-by looking at what the numbers claimed rather than trusting them. They are written up
-under "Where it got in the way" as feedback items 8 and 9, because both are properties
-of the data rather than bugs in this code.
+**Three things had to be right before that ranking meant anything**, and all three were
+found by looking at what the numbers claimed rather than trusting them. Two are properties
+of the data and are written up under "Where it got in the way" as feedback items 8 and 9.
+The third is a modelling choice: an outright gap between two venues says nothing about
+whether anyone is on either side of it.
+
+So the board is ordered by a **volume weighted spread**, the range the middle 80% of
+traded volume sits in, alongside the raw cheapest-to-dearest figure and the share held
+by the single deepest venue. iShares SGOV shows why. Its two wrappers are 183 basis
+points apart, which looks like the widest dislocation on the board, until you notice one
+of them carries 98.3% of the volume. Weighted, it is zero: everybody trades at one price
+and a quiet venue disagrees. Taiwan Semiconductor sits at 117 basis points on both
+measures, because its volume is genuinely split, and that is a real disagreement. Where
+the two columns diverge, the gap is resting on a venue almost nobody uses, and the
+product says so in the row rather than leaving the reader to work it out.
 
 **Categories are underrated.** `/v1/cryptocurrency/categories` gives a sector taxonomy
 with market cap and change already computed, so rotation needs one call rather than a

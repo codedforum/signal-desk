@@ -544,13 +544,14 @@ async function loadRwaSpreads() {
     head.textContent = '';
     const box = el('div', 'spreadhead');
     const big = el('div', 'spreadbig');
-    big.append(el('strong', null, bpsTxt(widest.tradableSpreadBps)));
-    big.append(el('span', 'mk', 'widest right now, ' + (widest.symbol || '')));
+    big.append(el('strong', null, bpsTxt(widest.weightedSpreadBps)));
+    big.append(el('span', 'mk', 'widest by volume, ' + (widest.symbol || '')));
     box.append(big);
     box.append(el('p', 'spreadsay',
-      `${widest.name || widest.symbol} is the most dislocated asset on the board. `
-      + `${wrapName(widest.cheapest)} at ${px(widest.cheapest.price)} against `
-      + `${wrapName(widest.dearest)} at ${px(widest.dearest.price)}.`));
+      `${widest.name || widest.symbol} is the most dislocated asset once the venues are `
+      + `weighted by what trades on them. ${wrapName(widest.cheapest)} at ${px(widest.cheapest.price)} `
+      + `against ${wrapName(widest.dearest)} at ${px(widest.dearest.price)}, `
+      + `around a volume weighted ${px(widest.vwap)}.`));
     head.append(box);
 
     for (const a of r.data) {
@@ -559,12 +560,23 @@ async function loadRwaSpreads() {
       first.append(el('span', 'sym', a.symbol || '?'));
       first.append(el('span', 'sub', (a.name || '').slice(0, 34)));
       tr.append(first);
-      tr.append(el('td', null, (a.type || '').replace(/_/g, ' ')));
-      const w = el('td', 'num');
-      w.textContent = String(a.tradable);
-      if (a.offScale) w.append(el('span', 'sub', a.offScale + ' on another unit'));
-      tr.append(w);
-      tr.append(el('td', 'num', bpsTxt(a.tradableSpreadBps)));
+      const wt = el('td', 'num');
+      wt.append(el('span', null, bpsTxt(a.weightedSpreadBps)));
+      // The two figures agreeing means the gap is spread across real volume.
+      // The weighted one collapsing means it sat on a venue almost nobody uses.
+      if (a.weightedSpreadBps < a.tradableSpreadBps * 0.5) {
+        wt.append(el('span', 'sub', 'thin on one side'));
+      }
+      tr.append(wt);
+
+      const rawc = el('td', 'num stale');
+      rawc.textContent = bpsTxt(a.tradableSpreadBps);
+      tr.append(rawc);
+
+      const top = el('td', 'num');
+      top.textContent = a.concentration == null ? 'n/a' : Math.round(a.concentration * 100) + '%';
+      top.append(el('span', 'sub', usd(a.liquidVolume) + ' traded'));
+      tr.append(top);
       const c = el('td');
       c.append(el('span', null, a.cheapest.symbol || '?'));
       c.append(el('span', 'sub', a.cheapest.issuer || ''));
@@ -582,6 +594,9 @@ async function loadRwaSpreads() {
       tb.append(tr);
     }
     note.textContent = `${r.ranked} of ${r.scanned} assets have two or more wrappers trading at once. `
+      + 'Weighted is the range the middle 80% of volume sits in, raw is the outright gap between '
+      + 'the cheapest and dearest venue, and top venue is the share held by the single deepest one. '
+      + 'Where those two columns diverge, the gap is resting on a venue almost nobody trades. '
       + (r.offScaleTotal
         ? `${r.offScaleTotal} wrappers were set aside for quoting a different unit of their asset, `
           + 'such as a gram of gold against a troy ounce. '
@@ -685,6 +700,18 @@ function spreadHeadline(s) {
     `${wrapName(s.tradableCheapest)} is the cheapest version trading, `
     + `${wrapName(s.tradableDearest)} the dearest. `
     + `On a $${NOTIONAL.toLocaleString('en-US')} position that gap is ${usd(cost)}.`));
+  // Where the money actually changes hands, which is the honest centre of the
+  // table when one venue carries most of the volume.
+  if (s.vwap != null) {
+    const parts = [`Volume weighted price ${px(s.vwap)} across ${usd(s.liquidVolume)} traded`];
+    if (s.concentration != null && s.concentration > 0.6) {
+      parts.push(`${Math.round(s.concentration * 100)}% of it at a single venue`);
+    }
+    if (s.weightedSpreadBps != null && s.weightedSpreadBps < s.tradableSpreadBps * 0.5) {
+      parts.push(`weighted by volume the spread is ${bpsTxt(s.weightedSpreadBps)}, so the gap above rests on a venue few people use`);
+    }
+    box.append(el('p', 'spreadsub', parts.join(', ') + '.'));
+  }
   return box;
 }
 

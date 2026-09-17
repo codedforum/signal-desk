@@ -488,6 +488,7 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
 .spreadbig strong{font-family:var(--mono);font-size:26px;line-height:1;letter-spacing:-.01em;
   font-variant-numeric:tabular-nums;color:var(--orange)}
 .spreadsay{margin:0;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.spreadsub{margin:0;font-size:12px;line-height:1.55;color:var(--ink-3)}
 .tagcheap{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
   text-transform:uppercase;color:var(--up);border:1px solid rgba(34,197,94,.42);
   border-radius:5px;padding:2px 6px;line-height:1.4}
