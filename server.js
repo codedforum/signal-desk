@@ -17,7 +17,7 @@ const { isServed } = require('./lib/served');
 const history = require('./lib/history');
 const brain = require('./lib/brain');
 const { PlatformMap } = require('./lib/platform');
-const { num, usdQuote, rwaAssetRow, spreadBoard } = require('./lib/board');
+const { num, usdQuote, rwaAssetRow, spreadBoard, withChains } = require('./lib/board');
 
 const app = express();
 const PORT = process.env.PORT || 3131;
@@ -293,10 +293,10 @@ async function gatherFacts(intent, symbol, question) {
     }
     const detail = await cmc.rwaQuotes([hit.id]);
     const raw = cmc.rwaRows(detail.data, 'rwa_assets')[0] || {};
-    const tokens = (Array.isArray(raw.tokens) ? raw.tokens : []).map((t) => ({
+    const tokens = withChains((Array.isArray(raw.tokens) ? raw.tokens : []).map((t) => ({
       symbol: t.symbol || '', issuer: t.issuer_name || '',
-      price: num(t.price), volume24h: num(t.volume_24h),
-    }));
+      price: num(t.price), volume24h: num(t.volume_24h), cryptoId: t.crypto_id ?? null,
+    })), platforms);
     const s = wrapperSpread(tokens, hit.reference);
     return {
       view: 'one asset',
@@ -307,6 +307,7 @@ async function gatherFacts(intent, symbol, question) {
       history: withHistory(hit).history,
       wrappers: s ? s.rows.map((r) => ({
         symbol: r.symbol, issuer: r.issuer, price: r.price, volume24h: r.volume24h,
+        chain: r.chain, publicChain: r.publicChain,
         liquidity: r.liquid ? 'liquid' : (r.thin ? 'thin' : 'none'),
         bpsFromBaseline: r.bpsFromBaseline,
       })) : [],
@@ -447,11 +448,12 @@ app.get('/api/rwa/asset/:id', safe(async (req, res) => {
   // Which on chain tokens actually represent this asset, and who minted each.
   // This is the join the category taxonomy cannot make: one real world asset
   // to many tokens, each with a named issuer.
-  const tokens = (Array.isArray(q.tokens) ? q.tokens : []).map((t) => ({
+  const tokens = withChains((Array.isArray(q.tokens) ? q.tokens : []).map((t) => ({
     symbol: t.symbol || '', name: t.name || '',
     price: num(t.price), marketCap: num(t.market_cap), volume24h: num(t.volume_24h),
     issuer: t.issuer_name || '', issuerId: t.issuer_id || '',
-  })).sort((x, y) => (y.marketCap || 0) - (x.marketCap || 0));
+    cryptoId: t.crypto_id ?? null,
+  })).sort((x, y) => (y.marketCap || 0) - (x.marketCap || 0)), platforms);
   const asset = {
     ...rwaAssetRow({ ...meta, ...q }),
     website: firstUrl(meta.website),
