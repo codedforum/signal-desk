@@ -119,7 +119,13 @@ const t = b.tidy({
 ok(t.weightedSpreadBps === 377.8,        'basis points land on one decimal');
 ok(t.price === 4305.7836,                'a price keeps four');
 ok(t.vwap === 4321.1859,                 'and so does a volume weighted price');
-ok(t.volume24h === 1234568,              'volume is a whole number');
+ok(t.volume24h === '$1.23M',             'volume becomes a readable amount, not thirteen digits');
+ok(b.money(2610613494899) === '$2.61T',   'trillions read as trillions');
+ok(b.money(857947658) === '$857.95M',     'and millions as millions');
+ok(b.money(4321) === '$4.3K',             'and thousands as thousands');
+ok(b.money(83.5) === '$83.50',            'small amounts keep cents');
+ok(b.money(-1500) === '-$1.5K',           'a negative keeps its sign');
+ok(b.money(null) === null,                'a null is not formatted into nonsense');
 ok(t.topVenueShare === 0.641,            'a share keeps three');
 ok(t.premiumPct === -0.42,               'a percentage keeps two');
 ok(t.symbol === 'GOLD',                  'a string is untouched');
