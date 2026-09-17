@@ -532,6 +532,7 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
   background:rgba(249,115,22,.10)}
 .tagband-unusually-wide{color:var(--orange);border-color:rgba(249,115,22,.34)}
 .tagband-unusually-tight{color:var(--ink-2);border-color:var(--line-2)}
+.tagband-same-chain{color:var(--up);border-color:rgba(34,197,94,.45)}
 .tbl td .tagband{margin-top:3px}
 .tagcheap{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
   text-transform:uppercase;color:var(--up);border:1px solid rgba(34,197,94,.42);

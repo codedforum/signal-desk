@@ -570,9 +570,10 @@ async function loadRwaSpreads() {
         wt.append(el('span', 'tagband tagband-' + a.history.band.replace(/\s+/g, '-'), a.history.band));
       } else if (a.weightedSpreadBps < a.tradableSpreadBps * 0.5) {
         wt.append(el('span', 'sub', 'thin on one side'));
-      } else if (a.sameChain === false && a.cheapest.chain && a.dearest.chain) {
-        // A price difference and a reachable one are different facts.
-        wt.append(el('span', 'sub', 'different venues'));
+      } else if (a.sameChain === true) {
+        // Almost every gap on this board spans two venues, so the rare one that
+        // does not is the only kind anyone could actually act on.
+        wt.append(el('span', 'tagband tagband-same-chain', 'one chain'));
       }
       tr.append(wt);
 
@@ -607,6 +608,14 @@ async function loadRwaSpreads() {
       + 'Weighted is the range the middle 80% of volume sits in, raw is the outright gap between '
       + 'the cheapest and dearest venue, and top venue is the share held by the single deepest one. '
       + 'Where those two columns diverge, the gap is resting on a venue almost nobody trades. '
+      + (() => {
+        const same = r.data.filter((a) => a.sameChain === true).length;
+        return same
+          ? `${same} of these sit with both ends on one chain and are marked; the rest span two venues, `
+            + 'so the gap is real but nothing can move across it. '
+          : 'Every gap here spans two venues, so none of them is an arbitrage: the cheap side and the '
+            + 'dear side live on different chains and nothing can move between them. ';
+      })()
       + (r.data.some((a) => a.history)
         ? `Each asset is also measured against its own last ${r.historyWindowDays} days, recorded here every 15 minutes. `
         : 'History is recorded every 15 minutes from now on, so these figures gain a "wide for this asset" reading shortly. ')
