@@ -12,6 +12,7 @@ const express = require('express');
 const path = require('path');
 const cmc = require('./lib/cmc');
 const signal = require('./lib/signal');
+const { wrapperSpread } = require('./lib/spread');
 
 const app = express();
 const PORT = process.env.PORT || 3131;
@@ -234,26 +235,32 @@ app.get('/api/rwa/asset/:id', safe(async (req, res) => {
   }
   const meta = cmc.rwaRows(info.data, 'rwa_assets')[0] || {};
   const q = cmc.rwaRows(quote.data, 'rwa_assets')[0] || {};
+  // Which on chain tokens actually represent this asset, and who minted each.
+  // This is the join the category taxonomy cannot make: one real world asset
+  // to many tokens, each with a named issuer.
+  const tokens = (Array.isArray(q.tokens) ? q.tokens : []).map((t) => ({
+    symbol: t.symbol || '', name: t.name || '',
+    price: num(t.price), marketCap: num(t.market_cap), volume24h: num(t.volume_24h),
+    issuer: t.issuer_name || '', issuerId: t.issuer_id || '',
+  })).sort((x, y) => (y.marketCap || 0) - (x.marketCap || 0));
+  const asset = {
+    ...rwaAssetRow({ ...meta, ...q }),
+    website: firstUrl(meta.website),
+    industry: meta.industry || '',
+    founded: meta.founded ?? null,
+    employees: meta.employees ?? null,
+    cik: meta.cik || '',
+    about: aboutText(meta.about).replace(/#+\s*/g, '').slice(0, 600),
+    logo: meta.logo || '',
+  };
   res.json({
     ok: true,
-    data: {
-      ...rwaAssetRow({ ...meta, ...q }),
-      website: firstUrl(meta.website),
-      industry: meta.industry || '',
-      founded: meta.founded ?? null,
-      employees: meta.employees ?? null,
-      cik: meta.cik || '',
-      about: aboutText(meta.about).replace(/#+\s*/g, '').slice(0, 600),
-      logo: meta.logo || '',
-    },
-    // Which on chain tokens actually represent this asset, and who minted each.
-    // This is the join the category taxonomy cannot make: one real world asset
-    // to many tokens, each with a named issuer.
-    tokens: (Array.isArray(q.tokens) ? q.tokens : []).map((t) => ({
-      symbol: t.symbol || '', name: t.name || '',
-      price: num(t.price), marketCap: num(t.market_cap), volume24h: num(t.volume_24h),
-      issuer: t.issuer_name || '', issuerId: t.issuer_id || '',
-    })).sort((x, y) => (y.marketCap || 0) - (x.marketCap || 0)),
+    data: asset,
+    tokens,
+    // Those same wrappers ranked by price. Issuers do not coordinate, so the
+    // gap between the cheapest and the dearest is a real number about this
+    // asset, and it costs no extra call to report it.
+    spread: wrapperSpread(tokens, asset.price),
     // Reported, not hidden. A panel that silently omits a plan gated endpoint
     // teaches the reader nothing about why it is missing.
     marketPairs: pairs.ok ? cmc.rwaRows(pairs.data, 'market_pairs') : null,

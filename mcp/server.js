@@ -17,8 +17,15 @@
 require('dotenv').config();
 const cmc = require('../lib/cmc');
 const sig = require('../lib/signal');
+const { wrapperSpread } = require('../lib/spread');
 
 const PROTOCOL = '2024-11-05';
+
+// A model reasons better over a short number than a full float, and reads a
+// named wrapper faster than a row it has to index into.
+const round1 = (n) => (n == null || !isFinite(n)) ? null : Math.round(n * 10) / 10;
+const round2 = (n) => (n == null || !isFinite(n)) ? null : Math.round(n * 100) / 100;
+const brief = (t) => t ? { symbol: t.symbol, issuer: t.issuer, price: t.price } : null;
 
 const TOOLS = [
   {
@@ -94,8 +101,10 @@ const TOOLS = [
     name: 'rwa_asset',
     description:
       'One tokenised real world asset in full: the registrant behind it (industry, founded, employees, SEC CIK, website) ' +
-      'and every on-chain token representing it with the issuer that minted each one. Use this to answer "who issues ' +
-      'tokenised NVDA", "what company is behind this token", "which version of tokenised gold is largest".',
+      'and every on-chain token representing it with the issuer that minted each one. Issuers do not coordinate, so the ' +
+      'same asset carries a different price on each wrapper, and this returns that dispersion ranked in basis points. ' +
+      'Use this to answer "who issues tokenised NVDA", "what company is behind this token", "which version of tokenised ' +
+      'gold is largest", "where is tokenised CRCL cheapest right now", "how far apart are the wrappers on this asset".',
     inputSchema: {
       type: 'object',
       properties: { rwa_id: { type: 'number', description: 'The rwa_id from rwa_assets.' } },
@@ -207,6 +216,18 @@ async function runTool(name, args = {}) {
       if (!meta && !q) return { error: `rwa asset ${id} unavailable (${info.verdict})`, detail: info.msg };
       const usd = Array.isArray(q?.quotes) ? (q.quotes.find((x) => (x.symbol || '').toUpperCase() === 'USD') || q.quotes[0] || {}) : {};
       const about = meta?.about;
+      const tokens = (q?.tokens || []).map((t) => ({
+        symbol: t.symbol, name: t.name, issuer: t.issuer_name, issuerId: t.issuer_id,
+        price: t.price, marketCap: t.market_cap, volume24h: t.volume_24h,
+      })).sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0));
+      const reference = usd.average_tokenized_price ?? q?.average_tokenized_price;
+      const spread = wrapperSpread(tokens, reference);
+      // wrapperSpread returns copies, so the ranking is matched back by the pair
+      // that identifies a wrapper. One asset can carry the same symbol twice,
+      // as Robinhood and a derivatives venue both do, which is why the issuer
+      // has to be part of the key and the symbol alone will not do.
+      const key = (t) => `${t.symbol}\u0000${t.issuerId}`;
+      const ranked = new Map((spread ? spread.rows : []).map((r) => [key(r), r]));
       return {
         rwa_id: id,
         symbol: meta?.symbol || q?.symbol, name: meta?.name || q?.name,
@@ -218,10 +239,31 @@ async function runTool(name, args = {}) {
         tokenizedPrice: usd.average_tokenized_price ?? q?.average_tokenized_price,
         tokenizedMarketCap: usd.tokenized_market_cap ?? q?.tokenized_market_cap,
         // The join a model cannot make on its own: one asset, many issuers.
-        tokens: (q?.tokens || []).map((t) => ({
-          symbol: t.symbol, name: t.name, issuer: t.issuer_name,
-          price: t.price, marketCap: t.market_cap,
-        })).sort((a, b) => (b.marketCap || 0) - (a.marketCap || 0)),
+        tokens: tokens.map((t) => {
+          // A token with no live quote is absent from the ranking, and says so
+          // with a null rather than a zero that would read as "on the money".
+          const r = ranked.get(key(t));
+          return {
+            ...t,
+            bpsFromCheapest: r ? round1(r.bpsFromCheapest) : null,
+            premiumPct: r ? round2(r.premiumPct) : null,
+          };
+        }),
+        spread: spread && {
+          wrappers: spread.count,
+          unpriced: spread.unpriced,
+          referencePrice: spread.reference,
+          spreadBps: round1(spread.spreadBps),
+          cheapest: brief(spread.cheapest),
+          dearest: brief(spread.dearest),
+          // Only these two can actually be traded against each other, so a
+          // recommendation should quote this pair and not the one above.
+          tradableSpreadBps: spread.tradableSpreadBps == null ? null : round1(spread.tradableSpreadBps),
+          tradableCheapest: brief(spread.tradableCheapest),
+          tradableDearest: brief(spread.tradableDearest),
+          caveat: 'Wrappers differ by chain, custody and redemption terms, so a gap is a venue '
+            + 'cost rather than an arbitrage. Say so when quoting one.',
+        },
       };
     }
     case 'rwa_issuers': {

@@ -7,7 +7,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/probe.test.cjs",
+    "test": "node test/probe.test.cjs && node test/spread.test.cjs",
     "capability": "node scripts/cmc-capability.mjs"
   },
   "dependencies": {

@@ -480,6 +480,25 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
 .hint{margin:10px 0 14px;font-size:12.5px;color:var(--ink-3);line-height:1.6}
 .hint code{font-family:var(--mono);font-size:11.5px;color:var(--ink-2)}
 
+/* ============== where one asset is cheapest right now ============== */
+.spreadhead{display:flex;flex-direction:column;gap:8px;padding:14px 16px;margin-bottom:12px;
+  border:1px solid rgba(249,115,22,.34);border-radius:var(--r);
+  background:linear-gradient(180deg,rgba(249,115,22,.09),rgba(249,115,22,.02))}
+.spreadbig{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.spreadbig strong{font-family:var(--mono);font-size:26px;line-height:1;letter-spacing:-.01em;
+  font-variant-numeric:tabular-nums;color:var(--orange)}
+.spreadsay{margin:0;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.tagcheap{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--up);border:1px solid rgba(34,197,94,.42);
+  border-radius:5px;padding:2px 6px;line-height:1.4}
+.tagquiet{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3)}
+/* The table is the widest thing in the modal, so it scrolls inside its own box
+   rather than pushing the dialog sideways on a phone. */
+.modal-body .tablewrap{margin-bottom:4px}
+.modal-body .tbl{font-size:12.5px}
+.modal-body .tbl .sub{margin-top:1px}
+
 /* ==================== keyboard reachable rows ==================== */
 .tbl tbody tr.rowopen{cursor:pointer}
 .tbl tbody tr.rowopen:hover{background:rgba(249,115,22,.06)}

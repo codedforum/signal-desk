@@ -23,7 +23,7 @@ npm install
 echo "CMC_API_KEY=your-key" > .env
 npm start                 # http://localhost:3131
 npm run capability        # what your key can actually reach
-npm test                  # probe rules, no key and no network needed
+npm test                  # probe rules and spread maths, no key and no network needed
 ```
 
 ## All four tracks, one product
@@ -33,7 +33,7 @@ npm test                  # probe rules, no key and no network needed
 | **Markets and Trading Tools** | Screener with local filtering, watchlist, portfolio with live PnL, price alerts evaluated client side |
 | **AI Agents and Automation** | `mcp/server.js`, an MCP server exposing six tools over stdio to any LLM client |
 | **Data and Visualisation** | Regime read, sentiment gauge, breadth bar, interactive 3D sector rotation, chain explorer |
-| **Real World Assets** | The v5 RWA family: tokenised asset universe, per-asset registrant metadata including SEC CIK, the tokens representing each asset with their issuers, and an issuer explorer |
+| **Real World Assets** | The v5 RWA family: tokenised asset universe, per-asset registrant metadata including SEC CIK, the tokens representing each asset with their issuers, the price dispersion between those tokens in basis points, and an issuer explorer |
 
 Submitted under one track, but the product covers all four.
 
@@ -58,7 +58,10 @@ rwa_issuers       who mints tokenised assets, and everything one issuer has mint
 `rwa_asset` is the one worth calling out. Asked "who issues tokenised NVDA", a model
 with raw endpoint access would have to fetch, join and rank three payloads. Here it
 gets Nvidia Corp, CIK 0001045810, and eight tokens ranked by market cap with the
-issuer named on each.
+issuer named on each. Asked instead where an asset is cheapest, it gets the same
+wrappers ranked by price with the gap between them already in basis points, the
+liquid pair separated from the merely quoted, and the caveat to repeat while
+saying so.
 
 Install:
 
@@ -122,6 +125,16 @@ bStocks. Gold resolves to seven led by Tether Holdings and Paxos. Pair that with
 `info`, which carries the registrant including the SEC CIK, and a tokenised equity
 traces from an on chain ticker to a filing identifier in two calls. No category
 taxonomy reaches that, because a category has no concept of an issuer.
+
+**Nobody makes those issuers agree on a price, and the gap is free to compute.**
+Because `quotes/latest` returns every wrapper in one payload, the dispersion between
+them is arithmetic on a response already in hand rather than a second request. Circle
+trades across seven tokenised versions spanning 43 basis points, cheapest at Reality
+and dearest at Robinhood, which on a $10,000 position is $43 of pure venue choice.
+`lib/spread.js` does that in about sixty lines and costs no credits, so the RWA view
+and the MCP tool both report it. Volume is what separates a price you can trade on
+from one that is only published, so a wrapper with none is shown and then excluded
+from any pair the product actually names.
 
 **Categories are underrated.** `/v1/cryptocurrency/categories` gives a sector taxonomy
 with market cap and change already computed, so rotation needs one call rather than a

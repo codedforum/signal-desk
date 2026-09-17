@@ -590,6 +590,87 @@ async function loadRwaAssets(type) {
   }
 }
 
+// Four decimals, because the gap between two wrappers of the same asset is often
+// smaller than the two the rest of the app rounds to.
+const px = (n) => (n == null || !isFinite(n)) ? 'n/a'
+  : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+const bpsTxt = (n) => (n == null || !isFinite(n)) ? 'n/a'
+  : (Math.abs(n) < 10 ? n.toFixed(1) : String(Math.round(n))) + ' bps';
+const wrapName = (t) => t.issuer ? `${t.symbol || '?'} by ${t.issuer}` : (t.symbol || t.name || 'a wrapper');
+
+// A position size only used to turn a rate into a number a reader can feel.
+const NOTIONAL = 10000;
+
+function spreadHeadline(s) {
+  const box = el('div', 'spreadhead');
+  const big = el('div', 'spreadbig');
+  big.append(el('strong', null, bpsTxt(s.tradableSpreadBps)));
+  big.append(el('span', 'mk', 'cheapest to dearest'));
+  box.append(big);
+  const cost = (s.tradableSpreadBps / 10000) * NOTIONAL;
+  box.append(el('p', 'spreadsay',
+    `${wrapName(s.tradableCheapest)} is the cheapest version trading, `
+    + `${wrapName(s.tradableDearest)} the dearest. `
+    + `On a $${NOTIONAL.toLocaleString('en-US')} position that gap is ${usd(cost)}.`));
+  return box;
+}
+
+// Every row carries the issuer that minted it, so a price that looks wrong can
+// be followed straight to everything else that issuer has tokenised.
+function spreadTable(s) {
+  const wrapEl = el('div', 'tablewrap');
+  const t = el('table', 'tbl');
+  const thead = el('thead'), hr = el('tr');
+  const cols = [['Wrapper', ''], ['Price', 'num'], ['vs cheapest', 'num'],
+                ['vs reference', 'num'], ['24h volume', 'num']];
+  for (const [label, c] of cols) hr.append(el('th', c, label));
+  thead.append(hr); t.append(thead);
+
+  const tb = el('tbody');
+  s.rows.forEach((r, i) => {
+    const tr = el('tr');
+
+    const left = el('td');
+    left.append(el('span', 'sym', r.symbol || '?'));
+    left.append(el('span', 'sub', r.issuer || r.name || ''));
+    tr.append(left);
+
+    tr.append(el('td', 'num', px(r.price)));
+
+    const vs = el('td', 'num');
+    if (i === 0) vs.append(el('span', 'tagcheap', s.count === 1 ? 'only version' : 'cheapest'));
+    else vs.textContent = bpsTxt(r.bpsFromCheapest);
+    tr.append(vs);
+
+    // Deliberately not coloured like a gain or a loss. A wrapper below the
+    // reference is the cheap one, so profit and loss semantics would invert the
+    // meaning. The sign already carries the direction.
+    const prem = el('td', 'num');
+    prem.textContent = r.premiumPct == null ? 'n/a' : pct(r.premiumPct);
+    tr.append(prem);
+
+    const vol = el('td', 'num');
+    if (r.liquid) vol.textContent = usd(r.volume24h);
+    else { vol.append(el('span', 'tagquiet', 'no volume')); }
+    tr.append(vol);
+
+    // The issuer explorer is the other half of this data, so a row is a door
+    // into it rather than the end of the trail.
+    if (r.issuerId) {
+      tr.className = 'rowopen';
+      tr.tabIndex = 0;
+      tr.title = 'see everything ' + (r.issuer || 'this issuer') + ' has tokenised';
+      const open = () => { closeModal(); loadIssuer(r.issuerId, r.issuer || r.symbol || 'issuer'); };
+      tr.onclick = open;
+      tr.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+    }
+    tb.append(tr);
+  });
+  t.append(tb);
+  wrapEl.append(t);
+  return wrapEl;
+}
+
 // The detail that justifies the whole track: a tokenised equity resolved back to
 // the company that issued the shares, including its SEC filing id.
 async function openRwaAsset(id, symbol, name) {
@@ -626,8 +707,31 @@ async function openRwaAsset(id, symbol, name) {
     }
     wrap.append(grid);
 
-    // One real world asset maps to many tokens, each minted by a named issuer.
-    if (r.tokens?.length) {
+    // One real world asset maps to many tokens, each minted by a named issuer
+    // who never agreed a price with the others. Ranking them by price answers
+    // the question the plain list only implies, which is where this asset is
+    // cheapest at the moment.
+    if (r.spread) {
+      const s = r.spread;
+      const heading = s.count === 1
+        ? 'The only tokenised version of this asset'
+        : `Wrapper spread, ${s.count} tokenised versions ranked by price`;
+      wrap.append(el('h4', 'msub', heading));
+      if (s.tradableSpreadBps != null) wrap.append(spreadHeadline(s));
+      wrap.append(spreadTable(s));
+      if (s.unpriced > 0) {
+        wrap.append(el('p', 'hint',
+          `${s.unpriced} further ${s.unpriced === 1 ? 'token is' : 'tokens are'} indexed for this asset `
+          + 'without a live quote, so nothing above includes them.'));
+      }
+      wrap.append(el('p', 'hint', s.count === 1
+        ? 'Only one issuer has tokenised this asset, so there is no spread to read yet. '
+          + 'The price above is derived from the quote already fetched, at no extra request.'
+        : 'Wrappers differ by chain, custody and redemption terms, so a gap is not free money. '
+          + 'It is what choosing one version over another costs on the same underlying. '
+          + 'Each figure is derived from the quote already fetched for this asset, at no extra request.'));
+    } else if (r.tokens?.length) {
+      // Indexed, but none of them quoted. Still worth naming who minted what.
       wrap.append(el('h4', 'msub', `Tokens representing this asset (${r.tokens.length})`));
       const list = el('div', 'tokline');
       for (const t of r.tokens.slice(0, 8)) {
