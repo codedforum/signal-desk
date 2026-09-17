@@ -31,7 +31,7 @@ npm test                  # probe rules and spread maths, no key and no network 
 | Track | In this build |
 |---|---|
 | **Markets and Trading Tools** | Screener with local filtering, watchlist, portfolio with live PnL, price alerts evaluated client side |
-| **AI Agents and Automation** | `mcp/server.js`, an MCP server exposing six tools over stdio to any LLM client |
+| **AI Agents and Automation** | `mcp/server.js`, an MCP server exposing ten tools over stdio to any LLM client, and a question box on the desk itself that retrieves first and answers second, so every figure in a reply comes from a live call and is shown underneath it |
 | **Data and Visualisation** | Regime read, sentiment gauge, breadth bar, interactive 3D sector rotation, chain explorer |
 | **Real World Assets** | The v5 RWA family: tokenised asset universe, per-asset registrant metadata including SEC CIK, the tokens representing each asset with their issuers, a dislocation leaderboard ranking the whole universe by how far apart its wrappers trade once weighted by where the volume is, and an issuer explorer |
 
@@ -157,6 +157,16 @@ measures, because its volume is genuinely split, and that is a real disagreement
 the two columns diverge, the gap is resting on a venue almost nobody uses, and the
 product says so in the row rather than leaving the reader to work it out.
 
+**The quotes payload names the issuer but not the network, and `crypto_id` closes that.**
+Each wrapper carries a `crypto_id`, which `/v2/cryptocurrency/info` turns into a platform,
+so a spread stops being one number and becomes two facts: a price difference, and whether
+anything could move across it. Tokenised TSM is cheapest on Robinhood's own closed venue
+and dearest on Ethereum. With every wrapper resolved, **37 of the 38 rankable assets have
+their cheap side and their dear side on different networks**, so almost nothing on the
+board is an arbitrage. That is the most interesting thing the data says about tokenised
+equities, and it is invisible until you make that join. The map is cached on disk because
+a token's chain does not change, so it costs a handful of calls once and nothing after.
+
 **Categories are underrated.** `/v1/cryptocurrency/categories` gives a sector taxonomy
 with market cap and change already computed, so rotation needs one call rather than a
 classification pipeline.
@@ -261,6 +271,14 @@ drifts and then stays drifted, so it is evidence of neglect rather than of a dis
 The floor here is $10,000 of 24h volume, stated in `lib/spread.js` and exported so callers
 can cite it. This is the single most important thing to get right when comparing venues,
 and it is entirely invisible if you sort on price alone.
+
+**10. One unknown id rejects an entire batch of ids.** `/v2/cryptocurrency/info?id=` takes
+well over a hundred ids happily, but a single id it does not recognise fails the whole
+call with `Invalid value for 'id': '39839'` and returns nothing for the other 275. Two of
+the crypto ids the RWA quotes endpoint itself handed back were rejected by the info
+endpoint, so the two halves of the same API disagree about which ids exist. The message
+names the offender, so the fix is to parse it, drop that id, retry, and remember it as
+unresolvable. Per-id errors alongside the records that did resolve would remove the need.
 
 ## Mobile first
 
