@@ -13,6 +13,7 @@ const path = require('path');
 const cmc = require('./lib/cmc');
 const signal = require('./lib/signal');
 const { wrapperSpread } = require('./lib/spread');
+const { isServed } = require('./lib/served');
 
 const app = express();
 const PORT = process.env.PORT || 3131;
@@ -23,6 +24,14 @@ const HIGHLIGHT = (process.env.HIGHLIGHT_CHAINS || 'base,solana,fogo,robinhood,x
   .split(',').map((s) => s.trim()).filter(Boolean);
 
 app.use(express.json());
+
+// This has to sit BEFORE the static handler. express.static answers a request
+// it can satisfy rather than calling next(), so a check placed behind it never
+// runs for exactly the files it is meant to catch.
+app.use((req, res, next) => {
+  if (isServed(req.path)) return next();
+  res.status(404).type('text/plain').send('not found');
+});
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: '5m' }));
 
 app.get('/api/health', (_req, res) => {
@@ -265,6 +274,62 @@ app.get('/api/rwa/asset/:id', safe(async (req, res) => {
     // teaches the reader nothing about why it is missing.
     marketPairs: pairs.ok ? cmc.rwaRows(pairs.data, 'market_pairs') : null,
     marketPairsVerdict: pairs.verdict,
+  });
+}));
+
+// Which assets are priced most differently across the venues that tokenise them.
+// quotes/latest takes up to 50 rwa_ids at once and returns the wrapper list for
+// every one, so the whole leaderboard is two calls: the universe, then one
+// batched quote. Both are cached for 15 minutes upstream, so the cost does not
+// scale with viewers, only with time.
+app.get('/api/rwa/spreads', safe(async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 2), 50);
+  const list = await cmc.rwaAssets({ limit });
+  if (!list.ok) return res.json({ ok: false, verdict: list.verdict, msg: list.msg, data: [] });
+
+  const ids = cmc.rwaRows(list.data, 'rwa_assets').map((r) => r.rwa_id ?? r.id).filter(Boolean);
+  if (!ids.length) return res.json({ ok: true, scanned: 0, data: [], usage: cmc.usage() });
+
+  const q = await cmc.rwaQuotes(ids);
+  if (!q.ok) return res.json({ ok: false, verdict: q.verdict, msg: q.msg, data: [] });
+
+  const rows = [];
+  let offScaleTotal = 0;
+  for (const raw of cmc.rwaRows(q.data, 'rwa_assets')) {
+    const asset = rwaAssetRow(raw);
+    const tokens = (Array.isArray(raw.tokens) ? raw.tokens : []).map((t) => ({
+      symbol: t.symbol || '', name: t.name || '',
+      price: num(t.price), marketCap: num(t.market_cap), volume24h: num(t.volume_24h),
+      issuer: t.issuer_name || '', issuerId: t.issuer_id || '',
+    }));
+    const s = wrapperSpread(tokens, asset.price);
+    if (!s) continue;
+    offScaleTotal += s.offScale.length;
+    // One venue cannot disagree with itself, so an asset with a single tradable
+    // wrapper has no spread to report and is left out rather than shown as zero.
+    if (s.tradableSpreadBps == null) continue;
+    rows.push({
+      id: asset.id, symbol: asset.symbol, name: asset.name, type: asset.type,
+      reference: asset.price,
+      tokenizedVolume24h: asset.tokenizedVolume24h,
+      wrappers: s.count,
+      tradable: s.tradableCount,
+      offScale: s.offScale.length,
+      spreadBps: s.spreadBps,
+      tradableSpreadBps: s.tradableSpreadBps,
+      cheapest: { symbol: s.tradableCheapest.symbol, issuer: s.tradableCheapest.issuer, price: s.tradableCheapest.price },
+      dearest: { symbol: s.tradableDearest.symbol, issuer: s.tradableDearest.issuer, price: s.tradableDearest.price },
+    });
+  }
+  rows.sort((a, b) => b.tradableSpreadBps - a.tradableSpreadBps);
+
+  res.json({
+    ok: true,
+    scanned: ids.length,
+    ranked: rows.length,
+    offScaleTotal,
+    data: rows,
+    usage: cmc.usage(),
   });
 }));
 
