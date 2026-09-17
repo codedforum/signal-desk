@@ -39,7 +39,7 @@ Submitted under one track, but the product covers all four.
 
 ### The MCP server
 
-Nine tools, and they expose the ANALYSIS rather than thin endpoint wrappers. A model
+Ten tools, and they expose the ANALYSIS rather than thin endpoint wrappers. A model
 asking "what is the market doing" wants a regime read and a breadth number, not 200
 rows of JSON it has to reduce itself, badly.
 
@@ -52,6 +52,7 @@ chain_coverage    which networks CMC indexes, and their platform ids
 api_capability    what the key can actually reach, so a model never invents an answer
 rwa_assets        tokenised equities, commodities and funds, by tokenised market cap
 rwa_asset         one asset: its registrant, its SEC CIK, and every token representing it
+rwa_spreads       the whole universe ranked by dislocation, against each asset's own history
 rwa_issuers       who mints tokenised assets, and everything one issuer has minted
 ```
 

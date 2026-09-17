@@ -489,6 +489,22 @@ button#f-reset{background:var(--bg-2);color:var(--ink-2);border:1px solid var(--
   font-variant-numeric:tabular-nums;color:var(--orange)}
 .spreadsay{margin:0;font-size:13px;line-height:1.6;color:var(--ink-2)}
 .spreadsub{margin:0;font-size:12px;line-height:1.55;color:var(--ink-3)}
+/* ---------- a reading against its own past ---------- */
+.histbox{margin:12px 0 18px}
+.histhead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:7px}
+.histhead .sub{font-size:11.5px;color:var(--ink-3)}
+.spark{display:block;width:100%;height:46px}
+.sparkline{fill:none;stroke:var(--orange);stroke-width:1.6;vector-effect:non-scaling-stroke;
+  stroke-linejoin:round;stroke-linecap:round}
+.sparkdot{fill:var(--orange)}
+.tagband{display:inline-block;font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;
+  text-transform:uppercase;border-radius:5px;padding:2px 6px;line-height:1.4;white-space:nowrap;
+  border:1px solid var(--line-2);color:var(--ink-3)}
+.tagband-widest-on-record{color:var(--orange);border-color:rgba(249,115,22,.55);
+  background:rgba(249,115,22,.10)}
+.tagband-unusually-wide{color:var(--orange);border-color:rgba(249,115,22,.34)}
+.tagband-unusually-tight{color:var(--ink-2);border-color:var(--line-2)}
+.tbl td .tagband{margin-top:3px}
 .tagcheap{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
   text-transform:uppercase;color:var(--up);border:1px solid rgba(34,197,94,.42);
   border-radius:5px;padding:2px 6px;line-height:1.4}

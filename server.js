@@ -14,6 +14,8 @@ const cmc = require('./lib/cmc');
 const signal = require('./lib/signal');
 const { wrapperSpread } = require('./lib/spread');
 const { isServed } = require('./lib/served');
+const history = require('./lib/history');
+const { num, usdQuote, rwaAssetRow, spreadBoard } = require('./lib/board');
 
 const app = express();
 const PORT = process.env.PORT || 3131;
@@ -22,6 +24,17 @@ const PORT = process.env.PORT || 3131;
 // data vendors do not.
 const HIGHLIGHT = (process.env.HIGHLIGHT_CHAINS || 'base,solana,fogo,robinhood,x layer')
   .split(',').map((s) => s.trim()).filter(Boolean);
+
+// The v5 endpoints return the present and nothing else, and no number of
+// credits buys last Tuesday. Recording the board on a timer is the only way to
+// be able to say later whether today was unusual, so it starts on boot.
+const hist = new history.SpreadHistory(
+  process.env.HISTORY_FILE || path.join(__dirname, 'data', 'spread-history.jsonl'));
+const HISTORY_WINDOW_DAYS = Math.min(
+  Number(process.env.HISTORY_WINDOW_DAYS) || 30, history.RETAIN_DAYS);
+// Matched to the upstream cache TTL, so a snapshot costs the two calls it
+// already made rather than two more.
+const RECORD_MS = Math.max(Number(process.env.RECORD_MS) || 15 * 60 * 1000, 60 * 1000);
 
 app.use(express.json());
 
@@ -160,18 +173,6 @@ const safe = (fn) => (req, res) => Promise.resolve(fn(req, res)).catch((e) => {
   if (!res.headersSent) res.status(500).json({ ok: false, error: 'handler failed', detail: e.message });
 });
 
-const num = (v) => (v == null || v === '' ? null : Number(v));
-
-// v5 returns quotes as an ARRAY of per-currency objects keyed by a `symbol`
-// field, not as an object keyed by currency the way v1 and v2 do. Reading it
-// like a v1 quote yields undefined for every number with no error anywhere.
-const usdQuote = (a) => {
-  const arr = a && a.quotes;
-  if (Array.isArray(arr)) return arr.find((q) => (q.symbol || '').toUpperCase() === 'USD') || arr[0] || {};
-  if (arr && typeof arr === 'object') return arr.USD || arr.usd || {};
-  return {};
-};
-
 // `about` is an object carrying a markdown description, not a string.
 const aboutText = (v) => {
   if (!v) return '';
@@ -180,26 +181,6 @@ const aboutText = (v) => {
 };
 
 const firstUrl = (v) => (Array.isArray(v) ? v[0] : v) || '';
-
-// One tokenised asset row, flattened. The v5 quote nests under quotes.USD and
-// carries tokenized_market_cap, which is the number that matters here: the value
-// actually on chain, not the market cap of the underlying company.
-function rwaAssetRow(a) {
-  const q = usdQuote(a);
-  return {
-    id: a.rwa_id ?? a.id,
-    symbol: a.symbol || '',
-    name: a.name || '',
-    slug: a.slug || '',
-    type: a.asset_type || '',
-    rank: a.rwa_rank ?? null,
-    hasTokens: a.has_tokens ?? null,
-    price: num(q.average_tokenized_price ?? a.average_tokenized_price),
-    tokenizedMarketCap: num(q.tokenized_market_cap ?? a.tokenized_market_cap),
-    tokenizedVolume24h: num(q.tokenized_volume_24h ?? a.tokenized_volume_24h),
-    lastUpdated: a.last_updated || q.last_updated || null,
-  };
-}
 
 // Asset types that actually return rows. Probed once at boot rather than pinned,
 // because a hardcoded list of upstream types goes stale the moment CMC adds one.
@@ -262,6 +243,7 @@ app.get('/api/rwa/asset/:id', safe(async (req, res) => {
     about: aboutText(meta.about).replace(/#+\s*/g, '').slice(0, 600),
     logo: meta.logo || '',
   };
+  const spread = wrapperSpread(tokens, asset.price);
   res.json({
     ok: true,
     data: asset,
@@ -269,7 +251,15 @@ app.get('/api/rwa/asset/:id', safe(async (req, res) => {
     // Those same wrappers ranked by price. Issuers do not coordinate, so the
     // gap between the cheapest and the dearest is a real number about this
     // asset, and it costs no extra call to report it.
-    spread: wrapperSpread(tokens, asset.price),
+    spread: spread && {
+      ...spread,
+      // The same reading the board carries, so the modal and the leaderboard
+      // never disagree about whether today is wide for this asset.
+      history: history.verdict(
+        hist.series(asset.id, Math.floor(Date.now() / 1000) - HISTORY_WINDOW_DAYS * history.DAY)
+          .map((x) => x.weighted),
+        spread.weightedSpreadBps),
+    },
     // Reported, not hidden. A panel that silently omits a plan gated endpoint
     // teaches the reader nothing about why it is missing.
     marketPairs: pairs.ok ? cmc.rwaRows(pairs.data, 'market_pairs') : null,
@@ -284,59 +274,33 @@ app.get('/api/rwa/asset/:id', safe(async (req, res) => {
 // scale with viewers, only with time.
 app.get('/api/rwa/spreads', safe(async (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 2), 50);
-  const list = await cmc.rwaAssets({ limit });
-  if (!list.ok) return res.json({ ok: false, verdict: list.verdict, msg: list.msg, data: [] });
+  const board = await spreadBoard(limit);
+  if (!board.ok) return res.json(board);
 
-  const ids = cmc.rwaRows(list.data, 'rwa_assets').map((r) => r.rwa_id ?? r.id).filter(Boolean);
-  if (!ids.length) return res.json({ ok: true, scanned: 0, data: [], usage: cmc.usage() });
-
-  const q = await cmc.rwaQuotes(ids);
-  if (!q.ok) return res.json({ ok: false, verdict: q.verdict, msg: q.msg, data: [] });
-
-  const rows = [];
-  let offScaleTotal = 0;
-  for (const raw of cmc.rwaRows(q.data, 'rwa_assets')) {
-    const asset = rwaAssetRow(raw);
-    const tokens = (Array.isArray(raw.tokens) ? raw.tokens : []).map((t) => ({
-      symbol: t.symbol || '', name: t.name || '',
-      price: num(t.price), marketCap: num(t.market_cap), volume24h: num(t.volume_24h),
-      issuer: t.issuer_name || '', issuerId: t.issuer_id || '',
-    }));
-    const s = wrapperSpread(tokens, asset.price);
-    if (!s) continue;
-    offScaleTotal += s.offScale.length;
-    // One venue cannot disagree with itself, so an asset with a single tradable
-    // wrapper has no spread to report and is left out rather than shown as zero.
-    if (s.tradableSpreadBps == null) continue;
-    rows.push({
-      id: asset.id, symbol: asset.symbol, name: asset.name, type: asset.type,
-      reference: asset.price,
-      tokenizedVolume24h: asset.tokenizedVolume24h,
-      wrappers: s.count,
-      tradable: s.tradableCount,
-      offScale: s.offScale.length,
-      spreadBps: s.spreadBps,
-      tradableSpreadBps: s.tradableSpreadBps,
-      // The figure the board is ordered by. A wide gap between two venues that
-      // between them hold a rounding error of the volume is a small fact, and
-      // this is what says so.
-      weightedSpreadBps: s.weightedSpreadBps,
-      vwap: s.vwap,
-      liquidVolume: s.liquidVolume,
-      concentration: s.concentration,
-      cheapest: { symbol: s.tradableCheapest.symbol, issuer: s.tradableCheapest.issuer, price: s.tradableCheapest.price, volumeShare: s.tradableCheapest.volumeShare },
-      dearest: { symbol: s.tradableDearest.symbol, issuer: s.tradableDearest.issuer, price: s.tradableDearest.price, volumeShare: s.tradableDearest.volumeShare },
-    });
+  // Each row measured against its own past, which is the question a single
+  // number cannot answer: 120 basis points is meaningless until you know
+  // whether this asset usually sits at 30 or at 300.
+  const since = Math.floor(Date.now() / 1000) - HISTORY_WINDOW_DAYS * history.DAY;
+  for (const r of board.data) {
+    const past = hist.series(r.id, since).map((p) => p.weighted);
+    r.history = history.verdict(past, r.weightedSpreadBps);
   }
-  rows.sort((a, b) => b.weightedSpreadBps - a.weightedSpreadBps);
 
+  res.json({ ...board, historyWindowDays: HISTORY_WINDOW_DAYS, usage: cmc.usage() });
+}));
+
+// The series behind that verdict, for one asset.
+app.get('/api/rwa/spread-history/:id', safe(async (req, res) => {
+  const days = Math.min(Math.max(Number(req.query.days) || HISTORY_WINDOW_DAYS, 1), history.RETAIN_DAYS);
+  const since = Math.floor(Date.now() / 1000) - days * history.DAY;
+  const series = hist.series(req.params.id, since);
   res.json({
     ok: true,
-    scanned: ids.length,
-    ranked: rows.length,
-    offScaleTotal,
-    data: rows,
-    usage: cmc.usage(),
+    id: req.params.id,
+    days,
+    minReadings: history.MIN_READINGS,
+    points: series.length,
+    data: series,
   });
 }));
 
@@ -412,8 +376,48 @@ app.get('/api/rwa/sector/:id', safe(async (req, res) => {
   res.json({ ok: true, name: r.data?.name || '', description: (r.data?.description || '').slice(0, 400), data: coins });
 }));
 
+// Write down what the board looked like, because this reading is the only
+// chance to record it. A failure here is logged and dropped: the recorder
+// exists to make the product better later and must never be able to take the
+// live site down now.
+let recording = false;
+async function recordSnapshot(reason) {
+  if (recording) return;
+  recording = true;
+  try {
+    const board = await spreadBoard(50);
+    if (!board.ok || !board.data.length) {
+      console.log(`[cmc-signal] snapshot skipped (${reason}): ${board.verdict || 'no rows'}`);
+      return;
+    }
+    const n = hist.append(board.data);
+    console.log(`[cmc-signal] snapshot ${reason}: ${n} assets recorded`);
+  } catch (e) {
+    console.log(`[cmc-signal] snapshot failed (${reason}): ${e.message}`);
+  } finally {
+    recording = false;
+  }
+}
+
 app.listen(PORT, () => {
   console.log(`[cmc-signal] listening on ${PORT}`);
   console.log(`[cmc-signal] key present: ${!!process.env.CMC_API_KEY}`);
   console.log(`[cmc-signal] highlight chains: ${HIGHLIGHT.join(', ')}`);
+  console.log(`[cmc-signal] recording spreads every ${Math.round(RECORD_MS / 60000)}m to ${hist.file}`);
+
+  if (process.env.RECORD_SPREADS === 'off') {
+    console.log('[cmc-signal] spread recording disabled by RECORD_SPREADS=off');
+    return;
+  }
+  // A short delay so a restart does not fire a snapshot before the process has
+  // settled, and unref so the timer never holds the process open by itself.
+  setTimeout(() => recordSnapshot('boot'), 20 * 1000).unref();
+  setInterval(() => recordSnapshot('timer'), RECORD_MS).unref();
+  // Once a day, drop whatever has aged out of the window.
+  setInterval(() => {
+    try {
+      const r = hist.prune();
+      if (r.removed) console.log(`[cmc-signal] history pruned: ${r.removed} snapshots aged out`);
+    } catch (e) { console.log(`[cmc-signal] prune failed: ${e.message}`); }
+  }, 24 * 60 * 60 * 1000).unref();
 });

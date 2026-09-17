@@ -18,6 +18,19 @@ require('dotenv').config();
 const cmc = require('../lib/cmc');
 const sig = require('../lib/signal');
 const { wrapperSpread } = require('../lib/spread');
+const { spreadBoard } = require('../lib/board');
+const history = require('../lib/history');
+const path = require('path');
+
+// The same file the server records into, so an agent sees exactly the history
+// the site does rather than a second, emptier copy of it.
+const hist = new history.SpreadHistory(
+  process.env.HISTORY_FILE || path.join(__dirname, '..', 'data', 'spread-history.jsonl'));
+const HISTORY_WINDOW_DAYS = Math.min(
+  Number(process.env.HISTORY_WINDOW_DAYS) || 30, history.RETAIN_DAYS);
+const pastOf = (id) => hist
+  .series(id, Math.floor(Date.now() / 1000) - HISTORY_WINDOW_DAYS * history.DAY)
+  .map((p) => p.weighted);
 
 const PROTOCOL = '2024-11-05';
 
@@ -110,6 +123,23 @@ const TOOLS = [
       type: 'object',
       properties: { rwa_id: { type: 'number', description: 'The rwa_id from rwa_assets.' } },
       required: ['rwa_id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'rwa_spreads',
+    description:
+      'Every tokenised asset ranked by how far apart its wrappers are priced, weighted by where the trading '
+      + 'actually happens, and measured against that asset\'s own recorded history. Answers "what is most '
+      + 'dislocated right now", "is this gap unusual or normal for this asset", "where is the same stock '
+      + 'cheapest across venues", "has this ever been wider". The whole board is two API calls because '
+      + 'quotes/latest batches fifty assets, so ask for it rather than looping over rwa_asset.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'How many assets to scan, 2 to 50. Default 50.' },
+        top: { type: 'number', description: 'How many ranked rows to return. Default 15.' },
+      },
       additionalProperties: false,
     },
   },
@@ -282,6 +312,9 @@ async function runTool(name, args = {}) {
           vwap: spread.vwap,
           liquidVolume: spread.liquidVolume,
           concentration: spread.concentration == null ? null : round2(spread.concentration),
+          // This asset measured against its own past. Null means there are not
+          // yet enough recorded readings to say, which is not the same as normal.
+          history: history.verdict(pastOf(id), spread.weightedSpreadBps),
           tradableCheapest: brief(spread.tradableCheapest),
           tradableDearest: brief(spread.tradableDearest),
           caveat: 'Wrappers differ by chain, custody and redemption terms, so a gap is a venue '
@@ -294,6 +327,34 @@ async function runTool(name, args = {}) {
             + 'on one side and the outright gap overstates the disagreement, so quote both and '
             + 'say which venue is thin.',
         },
+      };
+    }
+    case 'rwa_spreads': {
+      const limit = Math.min(Math.max(Number(args.limit) || 50, 2), 50);
+      const top = Math.min(Math.max(Number(args.top) || 15, 1), 50);
+      const board = await spreadBoard(limit);
+      if (!board.ok) return { error: `spreads unavailable (${board.verdict})`, detail: board.msg };
+      return {
+        scanned: board.scanned,
+        ranked: board.ranked,
+        historyWindowDays: HISTORY_WINDOW_DAYS,
+        offScaleWrappers: board.offScaleTotal,
+        note: 'weightedSpreadBps is the range the middle 80% of traded volume sits in and is what the '
+          + 'ranking uses. tradableSpreadBps is the outright gap between the cheapest and dearest venue. '
+          + 'When the second is much larger than the first, the gap rests on a venue almost nobody trades, '
+          + 'so quote the weighted figure and say which side is thin. history is null until enough '
+          + 'readings exist, and null means unknown, not normal.',
+        assets: board.data.slice(0, top).map((a) => ({
+          rwa_id: a.id, symbol: a.symbol, name: a.name, type: a.type,
+          weightedSpreadBps: round1(a.weightedSpreadBps),
+          tradableSpreadBps: round1(a.tradableSpreadBps),
+          vwap: a.vwap,
+          liquidVolume24h: a.liquidVolume,
+          topVenueShare: round2(a.concentration),
+          cheapest: { symbol: a.cheapest.symbol, issuer: a.cheapest.issuer, price: a.cheapest.price },
+          dearest: { symbol: a.dearest.symbol, issuer: a.dearest.issuer, price: a.dearest.price },
+          history: history.verdict(pastOf(a.id), a.weightedSpreadBps),
+        })),
       };
     }
     case 'rwa_issuers': {

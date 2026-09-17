@@ -562,9 +562,13 @@ async function loadRwaSpreads() {
       tr.append(first);
       const wt = el('td', 'num');
       wt.append(el('span', null, bpsTxt(a.weightedSpreadBps)));
-      // The two figures agreeing means the gap is spread across real volume.
-      // The weighted one collapsing means it sat on a venue almost nobody uses.
-      if (a.weightedSpreadBps < a.tradableSpreadBps * 0.5) {
+      // Against its own past when there is one, and against the other column
+      // when there is not. The two figures agreeing means the gap is spread
+      // across real volume; the weighted one collapsing means it sat on a
+      // venue almost nobody uses.
+      if (a.history && a.history.band !== 'normal') {
+        wt.append(el('span', 'tagband tagband-' + a.history.band.replace(/\s+/g, '-'), a.history.band));
+      } else if (a.weightedSpreadBps < a.tradableSpreadBps * 0.5) {
         wt.append(el('span', 'sub', 'thin on one side'));
       }
       tr.append(wt);
@@ -597,6 +601,9 @@ async function loadRwaSpreads() {
       + 'Weighted is the range the middle 80% of volume sits in, raw is the outright gap between '
       + 'the cheapest and dearest venue, and top venue is the share held by the single deepest one. '
       + 'Where those two columns diverge, the gap is resting on a venue almost nobody trades. '
+      + (r.data.some((a) => a.history)
+        ? `Each asset is also measured against its own last ${r.historyWindowDays} days, recorded here every 15 minutes. `
+        : 'History is recorded every 15 minutes from now on, so these figures gain a "wide for this asset" reading shortly. ')
       + (r.offScaleTotal
         ? `${r.offScaleTotal} wrappers were set aside for quoting a different unit of their asset, `
           + 'such as a gram of gold against a troy ounce. '
@@ -785,6 +792,78 @@ function spreadTable(s) {
   return wrapEl;
 }
 
+// A reading against its own past. Drawn by hand rather than with a chart
+// library, because one line and two labels does not justify a dependency.
+function spreadSparkline(points, w = 520, h = 46) {
+  const vals = points.map((p) => p.weighted);
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const span = (hi - lo) || 1;
+  const pad = 4;
+  const x = (i) => pad + (i / Math.max(points.length - 1, 1)) * (w - pad * 2);
+  const y = (v) => (h - pad) - ((v - lo) / span) * (h - pad * 2);
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('class', 'spark');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label',
+    `Weighted spread over the last ${points.length} readings, between ${Math.round(lo)} and ${Math.round(hi)} basis points`);
+
+  const d = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.weighted).toFixed(1)}`).join(' ');
+  const line = document.createElementNS(ns, 'path');
+  line.setAttribute('d', d);
+  line.setAttribute('class', 'sparkline');
+  svg.append(line);
+
+  // The latest reading marked, since the whole point is where today sits.
+  const dot = document.createElementNS(ns, 'circle');
+  dot.setAttribute('cx', x(points.length - 1).toFixed(1));
+  dot.setAttribute('cy', y(vals[vals.length - 1]).toFixed(1));
+  dot.setAttribute('r', '3');
+  dot.setAttribute('class', 'sparkdot');
+  svg.append(dot);
+  return svg;
+}
+
+// Fetched after the modal is already drawn, so a slow read never delays the
+// numbers that came with the asset itself.
+async function appendSpreadHistory(box, id, s) {
+  let r;
+  try {
+    r = await fetch('api/rwa/spread-history/' + encodeURIComponent(id)).then((x) => x.json());
+  } catch { return; }
+  if (!r?.ok) return;
+
+  const wrapEl = el('div', 'histbox');
+  if (r.points < r.minReadings) {
+    // Week one is a real state and saying so is better than an empty panel or,
+    // worse, a verdict drawn from four readings.
+    wrapEl.append(el('p', 'hint',
+      r.points === 0
+        ? 'No history for this asset yet. The board is recorded every 15 minutes, so whether a '
+          + 'spread is wide for this asset becomes answerable from here on.'
+        : `${r.points} of ${r.minReadings} readings needed before this spread can be called wide `
+          + 'or narrow for this asset. Recorded every 15 minutes.'));
+    box.append(wrapEl);
+    return;
+  }
+
+  const pts = r.data;
+  const head = el('div', 'histhead');
+  const v = s.history;
+  if (v) {
+    head.append(el('span', 'tagband tagband-' + v.band.replace(/\s+/g, '-'), v.band));
+    head.append(el('span', 'sub',
+      `${Math.round(v.percentile * 100)}th percentile of ${v.readings} readings over ${r.days} days, `
+      + `median ${bpsTxt(v.median)}, widest seen ${bpsTxt(v.max)}`));
+  }
+  wrapEl.append(head);
+  wrapEl.append(spreadSparkline(pts));
+  box.append(wrapEl);
+}
+
 // The detail that justifies the whole track: a tokenised equity resolved back to
 // the company that issued the shares, including its SEC filing id.
 async function openRwaAsset(id, symbol, name) {
@@ -832,6 +911,9 @@ async function openRwaAsset(id, symbol, name) {
         : `Wrapper spread, ${s.count} tokenised versions ranked by price`;
       wrap.append(el('h4', 'msub', heading));
       if (s.tradableSpreadBps != null) wrap.append(spreadHeadline(s));
+      const histSlot = el('div');
+      wrap.append(histSlot);
+      appendSpreadHistory(histSlot, id, s);
       wrap.append(spreadTable(s));
       if (s.offScale?.length) {
         const names = s.offScale.map((t) =>
