@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Signal Desk</title>
-<meta name="description" content="Market regime, breadth, 3D sector rotation and chain reach, built on the CoinMarketCap API.">
+<title>Signal Desk | RWA market intelligence</title>
+<meta name="description" content="Trace tokenised real world assets from the public company to every onchain token and issuer, using live CoinMarketCap data.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -32,16 +32,16 @@
       <img class="mark" src="img/mark.png" width="40" height="40" alt="">
       <div>
         <h1>Signal Desk</h1>
-        <p class="sub">Every number here came from a live CoinMarketCap call.</p>
+        <p class="sub">Public company to token to issuer, from live CoinMarketCap data.</p>
       </div>
     </a>
 
     <nav class="menu" id="menu" aria-label="Views">
+      <a href="#rwa"      data-view="rwa">RWA</a>
       <a href="#desk"     data-view="desk">Desk</a>
       <a href="#rotation" data-view="rotation">Rotation</a>
       <a href="#screener" data-view="screener">Screener</a>
       <a href="#portfolio" data-view="portfolio">Portfolio</a>
-      <a href="#rwa"      data-view="rwa">RWA</a>
       <a href="#chains"   data-view="chains">Chains</a>
       <a href="#api"      data-view="api">API</a>
       <span class="menu-ink" id="menu-ink"></span>
@@ -61,6 +61,42 @@
 
 <!-- ============================ DESK ============================ -->
 <section class="view" id="view-desk">
+
+  <section class="panel judge-intro reveal" id="judge-path">
+    <div class="judge-copy">
+      <p class="judge-kicker">Build with CMC, Real World Assets track</p>
+      <h2>Start with the company. See every onchain version and who issued it.</h2>
+      <p>Signal Desk traces a tokenised equity, commodity or fund back to the real asset, lists every token representing it, and names the issuer behind each one. It then shows where those versions disagree on price and inverts the same data into an issuer view.</p>
+      <div class="judge-flow" aria-label="Real world asset data flow">
+        <span>Public company</span><i aria-hidden="true"></i><span>Onchain tokens</span><i aria-hidden="true"></i><span>Issuers</span>
+      </div>
+      <div class="judge-actions">
+        <a class="judge-primary" href="#rwa">Open the RWA explorer</a>
+        <a href="#api">Verify the live API</a>
+        <a href="https://youtu.be/MmMq6c6H_Lg" target="_blank" rel="noopener">Watch the 2:44 demo</a>
+      </div>
+      <div class="judge-links" aria-label="Project links">
+        <a href="https://github.com/codedforum/signal-desk" target="_blank" rel="noopener">Public source and tests</a>
+        <a href="https://dorahacks.io/hackathon/coinmarketcap-api-202609/buidl" target="_blank" rel="noopener">DoraHacks hackathon entries</a>
+      </div>
+    </div>
+
+    <aside class="judge-route" aria-label="Judge it in 60 seconds">
+      <h3>Judge it in 60 seconds</h3>
+      <ol>
+        <li><a href="#rwa">Open RWA</a><span>Choose an asset such as Nvidia and open its company record.</span></li>
+        <li><a href="#rwa">Read tokens and issuers</a><span>See every representation, its issuer, price, volume and chain.</span></li>
+        <li><a href="#api">Check the evidence</a><span>Confirm which of the twenty named endpoints answered this key.</span></li>
+      </ol>
+    </aside>
+
+    <div class="judge-evidence" aria-label="Submission evidence">
+      <div><strong>7</strong><span>v5 RWA endpoints</span></div>
+      <div><strong>20</strong><span>named API endpoints</span></div>
+      <div><strong>Live</strong><span>capability evidence</span></div>
+      <div><strong>Public</strong><span>source and tests</span></div>
+    </div>
+  </section>
 
   <section class="panel reveal" id="askpanel" hidden>
     <div class="phead">
@@ -298,10 +334,10 @@
 
 <!-- app style bottom navigation, primary on mobile, hidden from wide screens -->
 <nav class="botnav" id="botnav" aria-label="Sections">
+  <a href="#rwa" data-view="rwa">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V8l8-4 8 4v11"/><path d="M8 19v-6h8v6"/><path d="M2 20h20"/></svg><span>RWA</span></a>
   <a href="#desk" data-view="desk">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg><span>Desk</span></a>
-  <a href="#rotation" data-view="rotation">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg><span>Rotation</span></a>
   <a href="#screener" data-view="screener">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span>Screener</span></a>
   <a href="#portfolio" data-view="portfolio">
@@ -314,13 +350,13 @@
 <div class="more-sheet" id="more-sheet" role="dialog" aria-modal="true" aria-label="More sections" hidden>
   <span class="grab" aria-hidden="true"></span>
   <h2>More</h2>
-  <a href="#rwa" data-view="rwa"><span class="ms-t">Real world assets</span><span class="ms-s">Tokenised equities, commodities, treasuries</span></a>
+  <a href="#rotation" data-view="rotation"><span class="ms-t">Sector rotation</span><span class="ms-s">Market cap and movement across categories</span></a>
   <a href="#chains" data-view="chains"><span class="ms-t">Chain reach</span><span class="ms-s">Every network CoinMarketCap indexes</span></a>
   <a href="#api" data-view="api"><span class="ms-t">API and spend</span><span class="ms-s">What this key reaches, and what it costs</span></a>
 </div>
 
 <footer class="wrap site-foot">
-  <p>Built on the CoinMarketCap API. Regime, breadth, rotation, movers, lookup and chain reach all run on free-tier endpoints, so the desk is fully usable without a paid plan.</p>
+  <p>Built for the Real World Assets track on the CoinMarketCap API. The issuer explorer, wrapper spreads, regime, breadth, rotation and chain reach remain usable when the hackathon key returns to the free plan.</p>
   <p class="mono" id="foot-usage"></p>
 </footer>
 

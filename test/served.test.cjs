@@ -39,5 +39,18 @@ for (const bad of ['/tmpmedia/face-ref.jpg', '/.env', '/server.js', '/package.js
 console.log('a non string path cannot slip past the check:');
 for (const bad of [null, undefined, 42, {}, []]) ok(!isServed(bad), `${JSON.stringify(bad)} is refused`);
 
+console.log('the first screen gives an RWA judge a complete one minute route:');
+const page = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8');
+ok(page.includes('<title>Signal Desk | RWA market intelligence</title>'), 'the page title names the RWA product');
+ok(page.includes('id="judge-path"'), 'the judge path is present on the first screen');
+ok(page.includes('Build with CMC, Real World Assets track'), 'the selected track is explicit');
+ok(page.includes('Judge it in 60 seconds'), 'the short evaluation route is named');
+ok(page.includes('href="#rwa"'), 'the route opens the RWA desk');
+ok(page.includes('href="#api"'), 'the route opens live API evidence');
+ok(page.includes('https://youtu.be/MmMq6c6H_Lg'), 'the demo video is linked');
+ok(page.includes('https://github.com/codedforum/signal-desk'), 'the public source is linked');
+ok(page.includes('https://dorahacks.io/hackathon/coinmarketcap-api-202609/buidl'), 'the hackathon entry list is linked');
+ok(page.indexOf('data-view="rwa"') < page.indexOf('data-view="desk"'), 'RWA leads the wide navigation');
+
 console.log(fail ? `\n${fail} FAILED` : '\nall passed');
 process.exit(fail ? 1 : 0);
