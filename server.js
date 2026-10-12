@@ -11,6 +11,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const cmc = require('./lib/cmc');
+const { CATALOG } = require('./lib/cmc-catalog');
 const signal = require('./lib/signal');
 const { wrapperSpread } = require('./lib/spread');
 const { isServed } = require('./lib/served');
@@ -68,6 +69,32 @@ app.use((req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: '5m' }));
 
+// Complete current CMC catalog. The UI can discover every documented route,
+// including routes that need a paid plan or caller-supplied identifiers.
+app.get('/api/catalog', (_req, res) => {
+  res.json({
+    ok: true,
+    source: 'CoinMarketCap current Pro REST documentation',
+    total: CATALOG.length,
+    catalog: CATALOG,
+    usage: cmc.usage(),
+  });
+});
+
+// Execute a catalogued endpoint on demand. The path is whitelist-backed, so this
+// cannot become an arbitrary outbound proxy. No automatic polling is attached:
+// historical, DEX, holder, derivatives, content, AI and exchange routes can be
+// used without burning credits on every dashboard refresh.
+app.post('/api/catalog/call', async (req, res) => {
+  const path = String(req.body?.path || '');
+  const entry = CATALOG.find((e) => e.path === path);
+  if (!entry) return res.status(404).json({ ok: false, error: 'path is not in the current CMC catalog' });
+  const query = req.body?.query == null ? '' : String(req.body.query);
+  const body = req.body?.body == null ? null : req.body.body;
+  const r = await cmc.catalogCall(path, { query, body, name: `manual:${entry.method}:${path}:${query}` });
+  res.status(r.status && r.status >= 400 ? r.status : 200).json({ ...r, path, method: entry.method, family: entry.family });
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'cmc-signal', at: new Date().toISOString(), usage: cmc.usage() });
 });
@@ -112,7 +139,15 @@ app.get('/api/capability', async (_req, res) => {
   const usable = checks.filter((c) => c.verdict === 'ok').map((c) => c.name);
   const gated = checks.filter((c) => c.verdict === 'plan').map((c) => c.name);
   const skipped = checks.filter((c) => c.verdict === 'skipped').map((c) => c.name);
-  res.json({ ok: true, usable, gated, skipped, checks, usage: cmc.usage() });
+  res.json({
+    ok: true, usable, gated, skipped, checks,
+    catalogTotal: CATALOG.length,
+    catalog: CATALOG,
+    // Declared means callable through /api/catalog/call; it is separate from
+    // reachable because CMC plan gates and required parameters vary by account.
+    declared: CATALOG.map((e) => e.path),
+    usage: cmc.usage(),
+  });
 });
 
 // Paid-tier extras. Each returns its verdict so the UI can say "your plan does

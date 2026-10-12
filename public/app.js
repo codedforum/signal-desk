@@ -1429,7 +1429,9 @@ function renderCapability(cap) {
   const ul = $('#cap-list'); if (!ul) return;
   ul.textContent = '';
   if (!cap || !cap.checks) { ul.append(el('li', 'skel', 'probe failed')); return; }
+  const checked = new Set();
   for (const c of cap.checks) {
+    checked.add(c.path);
     const li = el('li');
     const tone = c.verdict === 'ok' ? 'ok' : c.verdict === 'plan' ? 'plan' : c.verdict === 'skipped' ? 'plan' : 'bad';
     li.append(el('span', 'dot ' + tone));
@@ -1438,6 +1440,17 @@ function renderCapability(cap) {
       : c.verdict === 'plan' ? 'needs a paid plan'
       : c.verdict === 'skipped' ? 'not probed' : c.verdict;
     li.append(el('span', 'vd', label));
+    ul.append(li);
+  }
+  // Keep the complete documented catalog visible, even when a route requires
+  // identifiers or a paid tier and therefore is not safe to probe on page load.
+  // Every unprobed row remains callable through the catalog API.
+  for (const c of (cap.catalog || [])) {
+    if (checked.has(c.path)) continue;
+    const li = el('li');
+    li.append(el('span', 'dot plan'));
+    li.append(el('span', 'ep', c.method + ' ' + c.path));
+    li.append(el('span', 'vd', 'catalogued · on demand'));
     ul.append(li);
   }
   const gated = (cap.gated && cap.gated.length) || 0;
@@ -1450,6 +1463,7 @@ function renderCapability(cap) {
     stat(dl, 'calls this session', String(cap.usage.calls));
     stat(dl, 'credits spent', String(cap.usage.creditsUsed));
     stat(dl, 'endpoints reachable', String((cap.usable && cap.usable.length) || 0), 'up');
+    stat(dl, 'catalogued on demand', String(cap.catalogTotal || (cap.catalog || []).length || 0));
     stat(dl, 'refused by plan', String(gated), gated ? 'dn' : '');
     stat(dl, 'key', cap.usage.hasKey ? 'present' : 'missing', cap.usage.hasKey ? 'up' : 'dn');
   }
