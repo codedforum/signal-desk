@@ -168,5 +168,38 @@ ok(b.readReply('openai', { choices: [{ message: { content: '   ' } }] }).ok === 
 ok(b.readReply('ollama', null).ok === false,                                              'a null body is a failure');
 ok(b.readReply('openai', {}).msg === 'model returned nothing',                            'and says so plainly');
 
-console.log(fail ? `\n${fail} FAILED` : '\nall passed');
-process.exit(fail ? 1 : 0);
+
+// several backends: the first that answers wins, a failing one hands over
+console.log('several backends, tried in order:');
+(async () => {
+  const realFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url) => {
+    calls.push(url);
+    if (url.startsWith('https://a.example')) {
+      return { ok: false, status: 402, json: async () => ({ error: { message: 'Insufficient USDC balance: need ~$1.0000, email support@vendor.example' } }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'Gold trades tightest on PAXG.' } }] }) };
+  };
+  try {
+    const both = [
+      { base: 'https://a.example/v1', model: 'm1', key: 'k' },
+      { base: 'https://b.example/v1', model: 'm2', key: 'k' },
+    ];
+    const r = await b.chatAny(both, { system: 's', user: 'u' });
+    ok(r.ok && r.content === 'Gold trades tightest on PAXG.', 'a failing backend hands the question to the next');
+    ok(r.model === 'm2' && calls.length === 2,                 'and the answer says which model wrote it');
+    const none = await b.chatAny([both[0]], { system: 's', user: 'u' });
+    ok(!none.ok,                                               'when every backend fails the call fails');
+    const shown = b.publicFailure(none.msg);
+    ok(!/usdc|support@|\\$1/i.test(shown),                     'and the reader never sees the billing text');
+    ok(shown === 'the model is unavailable right now',         'only the kind of failure');
+    ok(b.publicFailure('model timed out') === 'the model took too long to reply', 'a timeout says so');
+    ok(!(await b.chatAny([], { system: 's', user: 'u' })).ok,  'no backends is a failure, not a crash');
+  } finally {
+    global.fetch = realFetch;
+  }
+})().then(() => {
+  console.log(fail ? `\n${fail} FAILED` : '\nall passed');
+  process.exit(fail ? 1 : 0);
+});

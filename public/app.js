@@ -887,7 +887,7 @@ async function askDesk(question) {
   } else {
     // The model failed but the data did not, so the data is still worth showing.
     out.append(el('p', 'hint',
-      `The model did not answer (${r.answerFailed || 'no reply'}), so here is the raw data it was given.`));
+      `No written answer this time (${r.answerFailed || 'no reply'}). Here is the live data the answer is built from.`));
   }
 
   const meta = el('div', 'askmeta');

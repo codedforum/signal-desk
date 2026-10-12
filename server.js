@@ -43,13 +43,18 @@ const RECORD_MS = Math.max(Number(process.env.RECORD_MS) || 15 * 60 * 1000, 60 *
 // host. Unset BRAIN_BASE and the box reports itself unavailable rather than
 // half working, because a dashboard that invents an answer is worse than one
 // that declines to give one.
-const BRAIN = {
-  base: process.env.BRAIN_BASE || '',
-  model: process.env.BRAIN_MODEL || 'gpt-oss:120b-cloud',
-  key: process.env.BRAIN_KEY || '',
-  kind: process.env.BRAIN_KIND || '',
-  enabled: !!process.env.BRAIN_BASE,
-};
+function brainFrom(prefix) {
+  const base = process.env[`${prefix}_BASE`] || '';
+  return base ? {
+    base,
+    model: process.env[`${prefix}_MODEL`] || 'gpt-oss:120b-cloud',
+    key: process.env[`${prefix}_KEY`] || '',
+    kind: process.env[`${prefix}_KIND`] || '',
+  } : null;
+}
+// BRAIN_* is tried first, then BRAIN2_* and BRAIN3_*.
+const BRAINS = ['BRAIN', 'BRAIN2', 'BRAIN3'].map(brainFrom).filter(Boolean);
+const BRAIN = { enabled: BRAINS.length > 0, model: BRAINS.length ? BRAINS[0].model : null };
 // Which chain each wrapper lives on. Cached on disk because a token's network
 // does not change, so this costs a handful of calls once and nothing after.
 const platforms = new PlatformMap(
@@ -413,8 +418,7 @@ app.post('/api/ask', safe(async (req, res) => {
 
   // 1. which of our own views answers this. The model picks, the keyword
   //    router decides when the model is unreachable or returns nonsense.
-  const cls = await brain.chat({
-    base: BRAIN.base, model: BRAIN.model, key: BRAIN.key, kind: BRAIN.kind,
+  const cls = await brain.chatAny(BRAINS, {
     system: brain.CLASSIFY_SYSTEM, user: q, timeoutMs: 15000, temperature: 0,
   });
   const routed = cls.ok ? brain.parseIntent(cls.content) : null;
@@ -430,12 +434,12 @@ app.post('/api/ask', safe(async (req, res) => {
   const facts = { units: brain.UNITS, ...gathered };
 
   // 3. prose over those facts and nothing else.
-  const ans = await brain.chat({
-    base: BRAIN.base, model: BRAIN.model, key: BRAIN.key, kind: BRAIN.kind,
+  const ans = await brain.chatAny(BRAINS, {
     system: brain.ANSWER_SYSTEM, user: brain.buildAnswerPrompt(q, facts),
     timeoutMs: 40000, temperature: 0.2,
   });
 
+  if (!ans.ok) console.warn(`[cmc-signal] ask: every model failed, last: ${String(ans.msg).slice(0, 160)}`);
   res.json({
     ok: true,
     question: q,
@@ -445,7 +449,7 @@ app.post('/api/ask', safe(async (req, res) => {
     answer: ans.ok ? brain.scrubAnswer(ans.content) : '',
     // Reported, never hidden. A box that silently falls back to a worse answer
     // teaches the reader to trust it more than they should.
-    answerFailed: ans.ok ? null : ans.msg,
+    answerFailed: ans.ok ? null : brain.publicFailure(ans.msg),
     facts,
     usage: cmc.usage(),
   });
